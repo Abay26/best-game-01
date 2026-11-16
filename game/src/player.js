@@ -46,6 +46,23 @@ export function nearestWisp(player, wisps) {
   return best;
 }
 
+/** Nearest thing worth shooting: the closest wisp, or the closest shootable
+ * hazard (a shard or a bramble — vents cannot be shot). The drone's fire
+ * auto-aims, so hazards must be valid targets or they could never be cleared. */
+export function nearestTarget(player, wisps, hazards) {
+  let best = nearestWisp(player, wisps);
+  let bestD = best ? (best.x - player.x) * (best.x - player.x) + (best.y - player.y) * (best.y - player.y) : Infinity;
+  for (const h of hazards ?? []) {
+    if (h.hazard === 'vent') continue;
+    const d = (h.x - player.x) * (h.x - player.x) + (h.y - player.y) * (h.y - player.y);
+    if (d < bestD) {
+      bestD = d;
+      best = h;
+    }
+  }
+  return best;
+}
+
 export function updatePlayer(player, input, state, dt, fireBullet) {
   if (!player.alive) return;
   player.invuln = Math.max(0, player.invuln - dt);
@@ -77,12 +94,13 @@ export function updatePlayer(player, input, state, dt, fireBullet) {
   for (const t of player.trail) t.life -= dt;
   while (player.trail.length > 0 && player.trail[0].life <= 0) player.trail.shift();
 
-  // Fire: hold Space, bullets auto-aim at the nearest wisp; with nothing to aim at
-  // they fly in the direction the drone is moving (or up when still).
+  // Fire: hold Space, bullets auto-aim at the nearest wisp or shootable hazard;
+  // with nothing to aim at they fly in the direction the drone is moving (or up
+  // when still).
   player.fireTimer -= dt;
   if (input.fire && player.fireTimer <= 0) {
     player.fireTimer = player.fireInterval;
-    const target = nearestWisp(player, state.wisps);
+    const target = nearestTarget(player, state.wisps, state.hazards);
     let dx;
     let dy;
     if (target) {

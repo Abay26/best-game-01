@@ -4,6 +4,7 @@ export const VIEW = { width: 960, height: 600 };
 export const STEP = 1 / 60;
 export const BEST_KEY = 'lumen-harvest-best';
 export const WAVES_TOTAL = 10;
+export const REALMS_TOTAL = 3;
 
 export const PALETTE = {
   bgTop: '#0a0e1e',
@@ -82,4 +83,31 @@ export const DASHER = {
   lungeSpeed: 430,
   lungeTime: 0.42,
   recover: 0.9,
+};
+
+// The boss of a realm's tenth wave: a huge wisp that chases slowly, fires a radial
+// burst of orbs, and calls in minis when its health is halved.
+export const BOSS = {
+  radius: 42,
+  speed: 46,
+  score: 500,
+  burstInterval: 3.1, // seconds between radial orb bursts
+  lungeInterval: 6.5, // seconds between charges at the drone
+  lungeSpeed: 300,
+  lungeTime: 0.55,
+};
+
+// A realm's hazard: vents erupt where they are telegraphed, shards drift and cut,
+// brambles sit still and snag. A new one appears every few seconds from wave 2 on.
+export const HAZARD = {
+  spawnInterval: 6.5,
+  firstWave: 2,
+  ventTelegraph: 1.25, // seconds of warning before the eruption
+  ventRadius: 72,
+  ventLife: 0.35, // the eruption itself
+  shardHp: 2,
+  shardSpeed: 34,
+  shardLife: 14,
+  brambleHp: 3,
+  brambleLife: 18, // then it withers, so thorns never choke the field
 };

@@ -1,15 +1,19 @@
 // Lumen Harvest — the world: one step of the rules. It owns the state (player,
 // wisps, bullets, motes, particles), the wave flow, the combo, collisions and the
 // win/lose conditions. The renderer only paints this state; the loop only steps it.
-import { COMBO, MOTE, PALETTE, VIEW, WAVES_TOTAL } from './config.js';
+import { COMBO, HAZARD, MOTE, PALETTE, VIEW, WAVES_TOTAL } from './config.js';
+import { realmById } from './arenas.js';
 import { createPlayer, updatePlayer } from './player.js';
 import {
   spawnBullet,
   spawnFloater,
+  spawnHazard,
   spawnMote,
   spawnOrb,
   spawnParticle,
   spawnWisp,
+  updateBoss,
+  updateHazard,
   updateMote,
   updateWisp,
 } from './entities.js';
@@ -34,6 +38,7 @@ export function comboMultiplier(state) {
 export function createWorld(rng) {
   const world = {
     rng,
+    realm: realmById('void'),
     player: createPlayer(),
     wisps: [],
     bullets: [],
@@ -41,7 +46,9 @@ export function createWorld(rng) {
     motes: [],
     particles: [],
     floaters: [],
+    hazards: [],
     stars: [],
+    ambient: [],
     score: 0,
     combo: 0,
     comboTimer: 0,
@@ -50,6 +57,7 @@ export function createWorld(rng) {
     queue: [],
     spawnTimer: 1,
     moteTimer: 0.5,
+    hazardTimer: HAZARD.spawnInterval,
     time: 0,
     shake: 0,
     flash: 0,
@@ -72,12 +80,32 @@ export function createWorld(rng) {
   }
 
   function startWave() {
-    world.queue = waveQueue(world.wave, rng);
+    world.queue = waveQueue(world.wave, rng, world.realm.id);
     world.spawnTimer = 0.9;
-    world.banner = { text: `WAVE ${world.wave}`, sub: world.wave === WAVES_TOTAL ? 'THE LAST WAVE' : `${world.queue.length} wisps incoming`, timer: 2.2 };
+    const bossWave = world.wave === WAVES_TOTAL;
+    world.banner = {
+      text: bossWave ? world.realm.boss.name.toUpperCase() : `WAVE ${world.wave}`,
+      sub: bossWave ? 'THE BOSS OF THE REALM' : `${world.queue.length} wisps incoming`,
+      timer: 2.2,
+    };
   }
 
-  function reset() {
+  function seedAmbient() {
+    world.ambient = [];
+    for (let i = 0; i < 42; i += 1) {
+      world.ambient.push({
+        x: rng.range(0, VIEW.width),
+        y: rng.range(0, VIEW.height),
+        r: rng.range(1, 2.6),
+        vx: rng.range(-8, 8),
+        vy: world.realm.ambient === 'embers' ? rng.range(-26, -10) : world.realm.ambient === 'snow' ? rng.range(10, 26) : rng.range(-6, 6),
+        tw: rng.range(0, Math.PI * 2),
+      });
+    }
+  }
+
+  function reset(realm) {
+    world.realm = realmById(realm && realm.id ? realm.id : realm);
     world.player = createPlayer();
     world.wisps = [];
     world.bullets = [];
@@ -85,6 +113,7 @@ export function createWorld(rng) {
     world.motes = [];
     world.particles = [];
     world.floaters = [];
+    world.hazards = [];
     world.score = 0;
     world.combo = 0;
     world.comboTimer = 0;
@@ -99,6 +128,8 @@ export function createWorld(rng) {
     world.motesCollected = 0;
     world.wavesCleared = 0;
     world.moteTimer = 0.5;
+    world.hazardTimer = HAZARD.spawnInterval;
+    seedAmbient();
     // A few motes already drifting so the field never opens empty.
     for (let i = 0; i < 5; i += 1) {
       world.motes.push(spawnMote(rng, rng.range(80, VIEW.width - 80), rng.range(80, VIEW.height - 80)));
@@ -108,8 +139,9 @@ export function createWorld(rng) {
 
   function seedBackdrop() {
     // Title-screen backdrop: wisps and motes drifting with nobody to fight.
+    seedAmbient();
     for (let i = 0; i < 5; i += 1) {
-      const w = spawnWisp(rng, rng.pick(['chaser', 'weaver', 'splitter']), rng.range(60, VIEW.width - 60), rng.range(60, VIEW.height - 60), 1);
+      const w = spawnWisp(rng, rng.pick(['chaser', 'weaver', 'splitter']), rng.range(60, VIEW.width - 60), rng.range(60, VIEW.height - 60), 1, world.realm);
       w.vx = rng.range(-30, 30);
       w.vy = rng.range(-30, 30);
       world.wisps.push(w);
@@ -148,9 +180,14 @@ export function createWorld(rng) {
       const gained = w.score * comboMultiplier(world);
       world.score += gained;
       spawnFloater(world.floaters, w.x, w.y, `+${gained}`, w.color);
-      // A wisp bursts into motes: the risk of fighting pays in light.
-      const drops = w.type === 'splitter' ? 2 : 1;
+      // A wisp bursts into motes: the risk of fighting pays in light. A boss
+      // bursts into a shower — and its fall is worth a wave on its own.
+      const drops = w.type === 'boss' ? 5 : w.type === 'splitter' ? 2 : 1;
       for (let i = 0; i < drops; i += 1) world.motes.push(spawnMote(rng, w.x, w.y));
+      if (w.type === 'boss') {
+        spawnParticle(world.particles, w.x, w.y, '#ffffff', 40, 320, 1.0, 4);
+        spawnFloater(world.floaters, w.x, w.y - 34, `${w.name} SLAIN`, PALETTE.gold);
+      }
       if (w.type === 'splitter') {
         for (let i = 0; i < 2; i += 1) {
           const mini = spawnWisp(rng, 'mini', w.x + rng.range(-16, 16), w.y + rng.range(-16, 16), world.wave);
@@ -291,9 +328,23 @@ export function createWorld(rng) {
           if (Math.hypot(pos.x - p.x, pos.y - p.y) > 220) break;
           pos = edgeSpawn();
         }
-        const w = spawnWisp(rng, type, pos.x, pos.y, world.wave);
+        const w = spawnWisp(rng, type, pos.x, pos.y, world.wave, world.realm);
         world.wisps.push(w);
         spawnParticle(world.particles, pos.x, pos.y, w.color, 6, 60, 0.4, 2.5);
+      }
+    }
+    // Hazards: one every few seconds from wave 2 on, away from the drone.
+    if (world.wave >= HAZARD.firstWave) {
+      world.hazardTimer -= dt;
+      if (world.hazardTimer <= 0) {
+        world.hazardTimer = HAZARD.spawnInterval * rng.range(0.85, 1.2);
+        let hx = rng.range(70, VIEW.width - 70);
+        let hy = rng.range(70, VIEW.height - 70);
+        if (Math.hypot(hx - p.x, hy - p.y) < 190) {
+          hx = VIEW.width - hx;
+          hy = VIEW.height - hy;
+        }
+        world.hazards.push(spawnHazard(rng, world.realm.hazard, hx, hy));
       }
     }
     world.moteTimer -= dt;
@@ -304,11 +355,45 @@ export function createWorld(rng) {
       }
     }
 
-    // Wisps.
+    // Wisps (and the boss, which fights by its own rules).
     for (const w of world.wisps) {
-      updateWisp(w, p, dt, world.time, (x, y, dx, dy) => {
-        world.orbs.push(spawnOrb(x, y, dx, dy));
-      });
+      if (w.type === 'boss') {
+        updateBoss(w, p, dt, world.time, (x, y, dx, dy) => {
+          world.orbs.push(spawnOrb(x, y, dx, dy));
+        }, (x, y) => {
+          const mini = spawnWisp(rng, 'mini', x + rng.range(-24, 24), y + rng.range(-24, 24), world.wave, world.realm);
+          world.wisps.push(mini);
+        });
+      } else {
+        updateWisp(w, p, dt, world.time, (x, y, dx, dy) => {
+          world.orbs.push(spawnOrb(x, y, dx, dy));
+        });
+      }
+    }
+
+    // Hazards: tick, erupt, and cut.
+    for (let i = world.hazards.length - 1; i >= 0; i -= 1) {
+      const h = world.hazards[i];
+      updateHazard(h, dt);
+      if (h.life <= 0 || (h.hazard === 'vent' && h.state === 'erupt' && h.stateTimer <= 0)) {
+        if (h.hazard === 'vent' && h.state === 'erupt') {
+          spawnParticle(world.particles, h.x, h.y, world.realm.hazardColor, 26, 260, 0.6, 3.6);
+        }
+        world.hazards.splice(i, 1);
+        continue;
+      }
+      if (!p.alive) continue;
+      if (h.hazard === 'vent' && h.state === 'erupt') {
+        const rr = HAZARD.ventRadius + p.radius;
+        if ((h.x - p.x) * (h.x - p.x) + (h.y - p.y) * (h.y - p.y) < rr * rr) {
+          if (hurtPlayer(h.x, h.y)) events |= EVENT_HIT;
+        }
+      } else if (h.hazard !== 'vent') {
+        const rr = h.radius + p.radius - 2;
+        if ((h.x - p.x) * (h.x - p.x) + (h.y - p.y) * (h.y - p.y) < rr * rr) {
+          if (hurtPlayer(h.x, h.y)) events |= EVENT_HIT;
+        }
+      }
     }
 
     // Bullets.
@@ -334,6 +419,27 @@ export function createWorld(rng) {
             events |= EVENT_KILL;
           }
           break;
+        }
+      }
+      // Shards and brambles can be shot apart; vents cannot.
+      if (world.bullets[i] === b) {
+        for (let j = world.hazards.length - 1; j >= 0; j -= 1) {
+          const h = world.hazards[j];
+          if (h.hazard === 'vent') continue;
+          const rr = h.radius + b.radius;
+          if ((h.x - b.x) * (h.x - b.x) + (h.y - b.y) * (h.y - b.y) < rr * rr) {
+            h.hp -= b.damage;
+            h.flash = 0.09;
+            spawnParticle(world.particles, b.x, b.y, world.realm.hazardColor, 3, 90, 0.25, 2);
+            world.bullets.splice(i, 1);
+            if (h.hp <= 0) {
+              world.hazards.splice(j, 1);
+              spawnParticle(world.particles, h.x, h.y, world.realm.hazardColor, 14, 170, 0.5, 3);
+              world.score += 15;
+              spawnFloater(world.floaters, h.x, h.y, '+15', world.realm.hazardColor);
+            }
+            break;
+          }
         }
       }
     }
@@ -424,6 +530,21 @@ export function createWorld(rng) {
       pt.vy *= 1 - 2.4 * dt;
       pt.life -= dt;
       if (pt.life <= 0) world.particles.splice(i, 1);
+    }
+    // Ambient life of the realm: embers rise, snow falls, spores drift.
+    for (const a of world.ambient) {
+      a.x += a.vx * dt;
+      a.y += a.vy * dt;
+      a.tw += dt;
+      if (a.y < -8) {
+        a.y = VIEW.height + 8;
+        a.x = rng.range(0, VIEW.width);
+      } else if (a.y > VIEW.height + 8) {
+        a.y = -8;
+        a.x = rng.range(0, VIEW.width);
+      }
+      if (a.x < -8) a.x = VIEW.width + 8;
+      if (a.x > VIEW.width + 8) a.x = -8;
     }
     for (let i = world.floaters.length - 1; i >= 0; i -= 1) {
       const f = world.floaters[i];

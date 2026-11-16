@@ -9,6 +9,15 @@ let musicStep = 0;
 
 const BASS_NOTES = [55, 55, 65.41, 49]; // A1 A1 C2 G1, one bar of four pulses
 
+// Each realm hums in its own key: Ember burns in A minor, Frost holds in D minor,
+// the Void Garden drifts in E minor.
+const REALM_BASS = {
+  ember: [55, 55, 65.41, 49],
+  frost: [73.42, 73.42, 87.31, 65.41],
+  void: [82.41, 82.41, 98, 73.42],
+};
+let bassNotes = BASS_NOTES;
+
 function ensure() {
   if (ctx) return ctx;
   try {
@@ -73,7 +82,7 @@ function startMusic() {
   if (musicTimer || !ctx) return;
   musicTimer = window.setInterval(() => {
     if (muted || !ctx) return;
-    const note = BASS_NOTES[musicStep % BASS_NOTES.length];
+    const note = bassNotes[musicStep % bassNotes.length];
     musicStep += 1;
     tone(note, 0.42, 'sine', 0.11);
     tone(note * 2, 0.2, 'triangle', 0.045);
@@ -87,6 +96,10 @@ export const audio = {
     const c = ensure();
     if (c && c.state === 'suspended') c.resume().catch(() => {});
     if (c) startMusic();
+  },
+  /** Retune the bass loop to the realm the drone just entered. */
+  setRealm(realmId) {
+    bassNotes = REALM_BASS[realmId] ?? BASS_NOTES;
   },
   toggleMute() {
     muted = !muted;

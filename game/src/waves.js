@@ -1,24 +1,51 @@
 // Waves and upgrades. A wave is a spawn queue: types unlock as the waves climb,
 // counts grow, and the gaps shrink. Clearing a wave opens the upgrade screen, where
 // the player picks one of three upgrades — the choices that shape a run.
+// Each realm runs its own table: Ember is aggressive (dashers and spitters early),
+// Frost swarms slow weavers and splitters, Void is the balanced original.
+// Wave 10 of every realm is the boss: the realm's boss plus a small escort.
 import { WISP } from './config.js';
 
-const WAVE_TABLE = [
-  { chaser: 6 },
-  { chaser: 8, weaver: 3 },
-  { chaser: 9, weaver: 4, splitter: 2 },
-  { chaser: 10, weaver: 5, splitter: 3, spitter: 2 },
-  { chaser: 11, weaver: 6, splitter: 3, spitter: 3 },
-  { chaser: 12, weaver: 6, splitter: 4, spitter: 3, dasher: 2 },
-  { chaser: 13, weaver: 7, splitter: 4, spitter: 4, dasher: 3 },
-  { chaser: 14, weaver: 8, splitter: 5, spitter: 4, dasher: 3 },
-  { chaser: 15, weaver: 9, splitter: 5, spitter: 5, dasher: 4 },
-  { chaser: 16, weaver: 10, splitter: 6, spitter: 5, dasher: 5 },
-];
+const WAVE_TABLES = {
+  ember: [
+    { chaser: 6, spitter: 1 },
+    { chaser: 8, weaver: 2, spitter: 2 },
+    { chaser: 9, weaver: 3, splitter: 2, spitter: 2 },
+    { chaser: 10, weaver: 4, splitter: 3, spitter: 3, dasher: 1 },
+    { chaser: 11, weaver: 5, splitter: 3, spitter: 3, dasher: 2 },
+    { chaser: 12, weaver: 5, splitter: 4, spitter: 3, dasher: 2 },
+    { chaser: 13, weaver: 6, splitter: 4, spitter: 4, dasher: 3 },
+    { chaser: 14, weaver: 7, splitter: 5, spitter: 3, dasher: 3 },
+    { chaser: 15, weaver: 8, splitter: 5, spitter: 5, dasher: 4 },
+  ],
+  frost: [
+    { chaser: 5, weaver: 2 },
+    { chaser: 7, weaver: 4, splitter: 1 },
+    { chaser: 8, weaver: 5, splitter: 3 },
+    { chaser: 9, weaver: 6, splitter: 4, spitter: 2 },
+    { chaser: 10, weaver: 7, splitter: 4, spitter: 2, dasher: 1 },
+    { chaser: 11, weaver: 8, splitter: 5, spitter: 3, dasher: 2 },
+    { chaser: 12, weaver: 9, splitter: 5, spitter: 3, dasher: 3 },
+    { chaser: 13, weaver: 9, splitter: 6, spitter: 4, dasher: 3 },
+    { chaser: 14, weaver: 10, splitter: 6, spitter: 4, dasher: 4 },
+  ],
+  void: [
+    { chaser: 6 },
+    { chaser: 8, weaver: 3 },
+    { chaser: 9, weaver: 4, splitter: 2 },
+    { chaser: 10, weaver: 5, splitter: 3, spitter: 2 },
+    { chaser: 11, weaver: 6, splitter: 3, spitter: 3 },
+    { chaser: 12, weaver: 6, splitter: 4, spitter: 3, dasher: 2 },
+    { chaser: 13, weaver: 7, splitter: 4, spitter: 4, dasher: 3 },
+    { chaser: 14, weaver: 8, splitter: 5, spitter: 4, dasher: 3 },
+    { chaser: 15, weaver: 9, splitter: 5, spitter: 5, dasher: 4 },
+  ],
+};
 
-/** The spawn queue for a wave: shuffled types, one entry per wisp. */
-export function waveQueue(wave, rng) {
-  const table = WAVE_TABLE[Math.min(wave, WAVE_TABLE.length) - 1];
+/** The spawn queue for a wave in a realm: shuffled types, one entry per wisp. */
+export function waveQueue(wave, rng, realmId) {
+  if (wave >= 10) return ['boss', 'mini', 'mini', 'chaser', 'chaser'];
+  const table = (WAVE_TABLES[realmId] ?? WAVE_TABLES.void)[Math.min(wave, 9) - 1];
   const queue = [];
   for (const [type, count] of Object.entries(table)) {
     if (wave >= WISP[type].firstWave) {

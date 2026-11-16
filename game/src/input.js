@@ -8,6 +8,8 @@ export const ACTION_UPGRADE_1 = 16;
 export const ACTION_UPGRADE_2 = 32;
 export const ACTION_UPGRADE_3 = 64;
 export const ACTION_MUTE = 128;
+export const ACTION_LEFT = 256;
+export const ACTION_RIGHT = 512;
 
 const MOVE_KEYS = {
   ArrowUp: [0, -1],
@@ -35,6 +37,8 @@ export function createInput(target) {
     if (event.code === 'Digit2') queued |= ACTION_UPGRADE_2;
     if (event.code === 'Digit3') queued |= ACTION_UPGRADE_3;
     if (event.code === 'KeyM') queued |= ACTION_MUTE;
+    if (event.code === 'ArrowLeft') queued |= ACTION_LEFT;
+    if (event.code === 'ArrowRight') queued |= ACTION_RIGHT;
     // Keep the page from scrolling on the keys the game owns.
     if (MOVE_KEYS[event.code] || event.code === 'Space' || event.code.startsWith('Arrow')) event.preventDefault();
   }
