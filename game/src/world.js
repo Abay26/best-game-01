@@ -2,7 +2,7 @@
 // wisps, bullets, motes, particles, bolts), the wave flow, the combo, the kill
 // streaks, the overdrive meter, collisions and the win/lose conditions. The
 // renderer only paints this state; the loop only steps it.
-import { CHAIN, COMBO, HAZARD, MOTE, OVERDRIVE, PALETTE, STREAK, VIEW, WAVES_TOTAL } from './config.js';
+import { CHAIN, COMBO, FRENZY, HAZARD, MOTE, OVERDRIVE, PALETTE, STREAK, VIEW, WAVES_TOTAL } from './config.js';
 import { realmById } from './arenas.js';
 import { createPlayer, updatePlayer } from './player.js';
 import {
@@ -11,6 +11,7 @@ import {
   spawnBullet,
   spawnFloater,
   spawnHazard,
+  spawnHeart,
   spawnMote,
   spawnOrb,
   spawnParticle,
@@ -38,7 +39,9 @@ export const EVENT_CHAIN = 2048;
 export const EVENT_STREAK = 4096;
 
 export function comboMultiplier(state) {
-  return 1 + Math.min(Math.floor(state.combo / COMBO.perLevel), COMBO.maxLevel - 1);
+  const base = 1 + Math.min(Math.floor(state.combo / COMBO.perLevel), COMBO.maxLevel - 1);
+  // Frenzy doubles every score gain while it burns.
+  return state.frenzyTime > 0 ? base * 2 : base;
 }
 
 export function createWorld(rng) {
@@ -50,6 +53,7 @@ export function createWorld(rng) {
     bullets: [],
     orbs: [],
     motes: [],
+    hearts: [], // heart pickups dropped by elites and bosses
     particles: [],
     floaters: [],
     hazards: [],
@@ -58,6 +62,9 @@ export function createWorld(rng) {
     score: 0,
     combo: 0,
     comboTimer: 0,
+    frenzyTime: 0, // seconds of doubled score left; 0 means no frenzy
+    endless: false, // Endless Tide: waves past 10, no boss, no win
+    eliteRolled: false, // whether this wave's first-wisp elite roll is spent
     maxCombo: 0,
     streak: 0, // kills since the last hit
     streakTier: 0, // streak tiers already called out this run
@@ -91,14 +98,20 @@ export function createWorld(rng) {
   }
 
   function startWave() {
-    world.queue = waveQueue(world.wave, rng, world.realm.id);
+    // Endless Tide never meets a boss: past wave 10 it reuses the wave-9 table,
+    // and wave 10 itself does too, so the run has no end and no win.
+    world.queue = world.endless
+      ? waveQueue(Math.min(world.wave, 9), rng, world.realm.id)
+      : waveQueue(world.wave, rng, world.realm.id);
     world.spawnTimer = 0.9;
+    world.eliteRolled = false;
     // The aegis shield, if the drone carries it, recharges at every wave.
     if (world.player.aegis) world.player.shield = 1;
-    const bossWave = world.wave === WAVES_TOTAL;
+    const bossWave = world.wave === WAVES_TOTAL && !world.endless;
+    const endlessWave = world.endless && world.wave > WAVES_TOTAL;
     world.banner = {
-      text: bossWave ? world.realm.boss.name.toUpperCase() : `WAVE ${world.wave}`,
-      sub: bossWave ? 'THE BOSS OF THE REALM' : `${world.queue.length} wisps incoming`,
+      text: bossWave ? world.realm.boss.name.toUpperCase() : endlessWave ? `WAVE ${world.wave} — ENDLESS` : `WAVE ${world.wave}`,
+      sub: bossWave ? 'THE BOSS OF THE REALM' : endlessWave ? 'NO BOSS · NO END · JUST LIGHT' : `${world.queue.length} wisps incoming`,
       timer: 2.2,
     };
   }
@@ -117,19 +130,23 @@ export function createWorld(rng) {
     }
   }
 
-  function reset(realm) {
+  function reset(realm, opts) {
     world.realm = realmById(realm && realm.id ? realm.id : realm);
+    world.endless = Boolean(opts && opts.endless);
     world.player = createPlayer();
     world.wisps = [];
     world.bullets = [];
     world.orbs = [];
     world.motes = [];
+    world.hearts = [];
     world.particles = [];
     world.floaters = [];
     world.hazards = [];
     world.score = 0;
     world.combo = 0;
     world.comboTimer = 0;
+    world.frenzyTime = 0;
+    world.eliteRolled = false;
     world.maxCombo = 0;
     world.streak = 0;
     world.streakTier = 0;
@@ -150,7 +167,7 @@ export function createWorld(rng) {
     seedAmbient();
     // A few motes already drifting so the field never opens empty.
     for (let i = 0; i < 5; i += 1) {
-      world.motes.push(spawnMote(rng, rng.range(80, VIEW.width - 80), rng.range(80, VIEW.height - 80)));
+      world.motes.push(spawnMoteAt(rng.range(80, VIEW.width - 80), rng.range(80, VIEW.height - 80)));
     }
     startWave();
   }
@@ -165,7 +182,7 @@ export function createWorld(rng) {
       world.wisps.push(w);
     }
     for (let i = 0; i < 7; i += 1) {
-      world.motes.push(spawnMote(rng, rng.range(60, VIEW.width - 60), rng.range(60, VIEW.height - 60)));
+      world.motes.push(spawnMoteAt(rng.range(60, VIEW.width - 60), rng.range(60, VIEW.height - 60)));
     }
   }
 
@@ -193,6 +210,13 @@ export function createWorld(rng) {
     const p = world.player;
     if (p.overdriveTime > 0) return;
     p.overdrive = Math.min(OVERDRIVE.max, p.overdrive + amount * p.overdriveFill);
+  }
+
+  function spawnMoteAt(x, y) {
+    // About one mote in eight comes up golden; Lumen Greed roughly doubles that.
+    const p = world.player;
+    const chance = MOTE.goldenChance + (p.goldenBoost ? 0.13 : 0);
+    return spawnMote(rng, x, y, undefined, rng.chance(chance));
   }
 
   function fireChain() {
@@ -236,10 +260,14 @@ export function createWorld(rng) {
       world.score += gained;
       spawnFloater(world.floaters, w.x, w.y, `+${gained}`, w.color);
       // A wisp bursts into motes: the risk of fighting pays in light. A boss
-      // bursts into a shower — and its fall is worth a wave on its own.
-      const drops = w.type === 'boss' ? 5 : w.type === 'splitter' ? 2 : 1;
-      for (let i = 0; i < drops; i += 1) world.motes.push(spawnMote(rng, w.x, w.y));
+      // bursts into a shower — and its fall is worth a wave on its own. A
+      // warden bursts into three; a splitter into two.
+      const drops = w.type === 'boss' ? 5 : w.type === 'splitter' ? 2 : w.type === 'warden' ? 3 : 1;
+      for (let i = 0; i < drops; i += 1) world.motes.push(spawnMoteAt(w.x, w.y));
+      // Elites drop a heart half the time; a boss always leaves one behind.
+      if (w.elite && rng.chance(0.5)) world.hearts.push(spawnHeart(rng, w.x, w.y));
       if (w.type === 'boss') {
+        world.hearts.push(spawnHeart(rng, w.x, w.y));
         spawnParticle(world.particles, w.x, w.y, '#ffffff', 40, 320, 1.0, 4);
         spawnFloater(world.floaters, w.x, w.y - 34, `${w.name} SLAIN`, PALETTE.gold);
         world.hitstop = 0.22; // the world holds its breath as the boss falls
@@ -329,6 +357,8 @@ export function createWorld(rng) {
     world.wisps = [];
     world.orbs = [];
     world.bullets = [];
+    world.hearts = [];
+    world.frenzyTime = 0;
     world.waveState = 'fight';
     startWave();
   }
@@ -356,6 +386,16 @@ export function createWorld(rng) {
     if (world.comboTimer > 0) {
       world.comboTimer -= dt;
       if (world.comboTimer <= 0) world.combo = 0;
+    }
+    // Frenzy burns down; when it ends the combo resets to zero and must be
+    // rebuilt from scratch.
+    if (world.frenzyTime > 0) {
+      world.frenzyTime -= dt;
+      if (world.frenzyTime <= 0) {
+        world.frenzyTime = 0;
+        world.combo = 0;
+        world.comboTimer = 0;
+      }
     }
 
     // Ambient backdrop behind the title screen: drift, never fight.
@@ -410,7 +450,20 @@ export function createWorld(rng) {
           if (Math.hypot(pos.x - p.x, pos.y - p.y) > 220) break;
           pos = edgeSpawn();
         }
-        const w = spawnWisp(rng, type, pos.x, pos.y, world.wave, world.realm);
+        // From wave 4 on, the first wisp of the wave has a 1-in-3 chance to
+        // come up elite: double health, wider body, double score, gold ring.
+        let elite = false;
+        if (world.wave >= 4 && !world.eliteRolled) {
+          world.eliteRolled = true;
+          elite = rng.chance(1 / 3);
+        }
+        const w = spawnWisp(rng, type, pos.x, pos.y, world.wave, world.realm, elite);
+        // Endless Tide past wave 10: every wisp is tougher, +10% hp per wave.
+        if (world.endless && world.wave > WAVES_TOTAL && type !== 'boss') {
+          const scale = 1 + 0.1 * (world.wave - WAVES_TOTAL);
+          w.hp = Math.ceil(w.hp * scale);
+          w.maxHp = w.hp;
+        }
         world.wisps.push(w);
         spawnParticle(world.particles, pos.x, pos.y, w.color, 6, 60, 0.4, 2.5);
       }
@@ -433,7 +486,7 @@ export function createWorld(rng) {
     if (world.moteTimer <= 0) {
       world.moteTimer = MOTE.spawnInterval * rng.range(0.8, 1.25);
       if (world.motes.length < MOTE.maxOnField) {
-        world.motes.push(spawnMote(rng, rng.range(50, VIEW.width - 50), rng.range(50, VIEW.height - 50)));
+        world.motes.push(spawnMoteAt(rng.range(50, VIEW.width - 50), rng.range(50, VIEW.height - 50)));
       }
     }
 
@@ -596,14 +649,43 @@ export function createWorld(rng) {
         fillOverdrive(OVERDRIVE.perMote);
         const gained = (m.value + p.moteBonus) * comboMultiplier(world);
         world.score += gained;
-        spawnFloater(world.floaters, m.x, m.y, `+${gained}`, PALETTE.mote);
-        spawnParticle(world.particles, m.x, m.y, PALETTE.mote, 6, 110, 0.35, 2.4);
+        spawnFloater(world.floaters, m.x, m.y, `+${gained}`, m.golden ? PALETTE.gold : PALETTE.mote);
+        spawnParticle(world.particles, m.x, m.y, m.golden ? PALETTE.gold : PALETTE.mote, 6, 110, 0.35, 2.4);
+        events |= EVENT_PICKUP;
+        // A 25 combo sets the harvest on fire: six seconds of doubled score.
+        if (world.combo >= FRENZY.combo && world.frenzyTime <= 0) {
+          world.frenzyTime = FRENZY.duration;
+          world.banner = { text: 'FRENZY — DOUBLE LIGHT', sub: 'ALL SCORE DOUBLED FOR 6s', timer: 2.0 };
+        }
+      }
+    }
+
+    // Hearts: drift, magnet, pickup — a full heart becomes bonus score instead.
+    for (let i = world.hearts.length - 1; i >= 0; i -= 1) {
+      const h = world.hearts[i];
+      updateMote(h, p, dt);
+      if (h.life <= 0) {
+        world.hearts.splice(i, 1);
+        continue;
+      }
+      const rr = 26;
+      if (p.alive && (h.x - p.x) * (h.x - p.x) + (h.y - p.y) * (h.y - p.y) < rr * rr) {
+        world.hearts.splice(i, 1);
+        if (p.hearts < p.maxHearts) {
+          p.hearts += 1;
+          spawnFloater(world.floaters, h.x, h.y, '+1 ♥', PALETTE.danger);
+        } else {
+          world.score += 25;
+          spawnFloater(world.floaters, h.x, h.y, '+25', PALETTE.gold);
+        }
+        spawnParticle(world.particles, h.x, h.y, PALETTE.danger, 8, 120, 0.4, 2.6);
         events |= EVENT_PICKUP;
       }
     }
 
     // Chain lightning, every Nth kill, when the drone carries the coil.
-    if (p.chain && world.killsSinceChain >= CHAIN.everyKills) {
+    // Chain Coil II shortens the count to every 4th kill.
+    if (p.chain && world.killsSinceChain >= (p.chainEvery ?? CHAIN.everyKills)) {
       world.killsSinceChain = 0;
       if (fireChain()) events |= EVENT_CHAIN;
     }
@@ -617,13 +699,14 @@ export function createWorld(rng) {
       return events;
     }
 
-    // Wave cleared: queue empty and field empty.
+    // Wave cleared: queue empty and field empty. In Endless Tide there is no
+    // win — every cleared wave just opens the upgrade screen and the next wave.
     if (world.queue.length === 0 && world.wisps.length === 0) {
       world.wavesCleared += 1;
       const bonus = 100 * world.wave;
       world.score += bonus;
       spawnFloater(world.floaters, p.x, p.y - 30, `WAVE BONUS +${bonus}`, PALETTE.gold);
-      if (world.wave >= WAVES_TOTAL) {
+      if (world.wave >= WAVES_TOTAL && !world.endless) {
         world.waveState = 'done';
         events |= EVENT_WIN;
       } else {

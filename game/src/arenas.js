@@ -1,9 +1,10 @@
-// Lumen Harvest — the four realms. One harvester, four arenas, each with its own
+// Lumen Harvest — the five realms. One harvester, five arenas, each with its own
 // palette, enemy colours, drifting ambient life, a hazard that shapes the fight
 // and a boss at the end of its tenth wave. The campaign runs them in order: a
 // realm opens once the realms before it are cleared, so the map itself is the
-// progress. The Storm Reef is the new fourth realm: lightning, rain and a boss
-// that fires its orbs in a spiral.
+// progress. The Storm Reef is the fourth realm: lightning, rain and a boss
+// that fires its orbs in a spiral. The Aurora Tide is the fifth: ribbons of
+// light over a green sea, and a serpent that weaves a spiral of its own.
 export const REALMS = [
   {
     id: 'ember',
@@ -30,12 +31,13 @@ export const REALMS = [
       dasher: '#ff3860',
       sniper: '#ff5df2',
       orbiter: '#5df2ff',
+      warden: '#d8b25c',
       mini: '#ffb38a',
     },
     hazard: 'vent',
     hazardColor: '#ff7a2a',
     ambient: 'embers', // glowing cinders rising
-    boss: { name: 'Ember Colossus', color: '#ff6a2a', hp: 46, burst: 8, minis: 2, spiral: false },
+    boss: { name: 'Ember Colossus', color: '#ff6a2a', hp: 42, burst: 8, minis: 2, spiral: false },
   },
   {
     id: 'frost',
@@ -62,12 +64,13 @@ export const REALMS = [
       dasher: '#4d9fff',
       sniper: '#ff5df2',
       orbiter: '#5df2ff',
+      warden: '#d8b25c',
       mini: '#cfeeff',
     },
     hazard: 'shard',
     hazardColor: '#9fe8ff',
     ambient: 'snow', // snowflakes drifting down
-    boss: { name: 'Glacier Warden', color: '#5dc8ff', hp: 56, burst: 10, minis: 2, spiral: false },
+    boss: { name: 'Glacier Warden', color: '#5dc8ff', hp: 50, burst: 10, minis: 2, spiral: false },
   },
   {
     id: 'void',
@@ -94,12 +97,13 @@ export const REALMS = [
       dasher: '#ff3860',
       sniper: '#ff5df2',
       orbiter: '#5df2ff',
+      warden: '#d8b25c',
       mini: '#ffb38a',
     },
     hazard: 'bramble',
     hazardColor: '#b388ff',
     ambient: 'spores', // slow violet spores drifting
-    boss: { name: 'Void Bloom', color: '#b388ff', hp: 40, burst: 8, minis: 4, spiral: false },
+    boss: { name: 'Void Bloom', color: '#b388ff', hp: 38, burst: 8, minis: 4, spiral: false },
   },
   {
     id: 'storm',
@@ -126,12 +130,46 @@ export const REALMS = [
       dasher: '#2ad4ff',
       sniper: '#ff5df2',
       orbiter: '#5df2ff',
+      warden: '#d8b25c',
       mini: '#c8fff0',
     },
     hazard: 'storm',
     hazardColor: '#5df2d6',
     ambient: 'rain', // slanted rain streaks
-    boss: { name: 'Tempest Leviathan', color: '#2ad4ff', hp: 64, burst: 12, minis: 3, spiral: true },
+    boss: { name: 'Tempest Leviathan', color: '#2ad4ff', hp: 58, burst: 12, minis: 3, spiral: true },
+  },
+  {
+    id: 'aurora',
+    name: 'Aurora Tide',
+    tagline: 'Ribbons of light over a green sea',
+    unlock: 4,
+    palette: {
+      bgTop: '#03140f',
+      bgBottom: '#0a2e26',
+      nebulaA: '#0f7a5e',
+      nebulaB: '#5e2a8a',
+      star: '#eafff4',
+      accent: '#5df2a0',
+      mote: '#7dffb0',
+      moteCore: '#eafff4',
+      player: '#ffd166',
+      border: 'rgba(93, 242, 160, 0.32)',
+    },
+    enemyColors: {
+      chaser: '#5df2a0',
+      weaver: '#7dffb0',
+      splitter: '#a5ffd6',
+      spitter: '#3fd6a0',
+      dasher: '#2ad4ff',
+      sniper: '#ff5df2',
+      orbiter: '#5df2ff',
+      warden: '#d8b25c',
+      mini: '#d8ffe9',
+    },
+    hazard: 'aurora',
+    hazardColor: '#7dffb0',
+    ambient: 'aurora', // slow ribbons drifting, like spores in a new colour
+    boss: { name: 'Aurora Serpent', color: '#5df2a0', hp: 72, burst: 12, minis: 3, spiral: true },
   },
 ];
 

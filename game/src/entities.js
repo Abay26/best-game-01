@@ -5,11 +5,11 @@
 // orbiter that circles the drone before diving at it.
 import { BOSS, DASHER, HAZARD, MOTE, ORBITER, PALETTE, SNIPER, SPITTER, VIEW, WISP } from './config.js';
 
-export function spawnWisp(rng, type, x, y, wave, realm) {
+export function spawnWisp(rng, type, x, y, wave, realm, elite) {
   if (type === 'boss') return spawnBoss(rng, x, y, realm);
   const spec = WISP[type];
   const hpScale = 1 + Math.floor((wave - 1) / 3); // +1 hp every three waves
-  return {
+  const w = {
     kind: 'wisp',
     type,
     x,
@@ -31,6 +31,15 @@ export function spawnWisp(rng, type, x, y, wave, realm) {
     orbitAngle: rng.range(0, Math.PI * 2), // orbiter: its angle around the drone
     flash: 0, // white flash frames after a hit
   };
+  if (elite) {
+    // An elite wisp: double health, a wider body, double score, a gold ring.
+    w.hp *= 2;
+    w.maxHp *= 2;
+    w.radius += 4;
+    w.score *= 2;
+    w.elite = true;
+  }
+  return w;
 }
 
 /** The boss of a realm's tenth wave: huge, slow, and loud. Spiral bosses weave
@@ -67,7 +76,8 @@ export function spawnBoss(rng, x, y, realm) {
 
 /** A realm hazard: a vent telegraphs then erupts, a shard drifts and cuts, a
  * bramble sits still and snags, a storm cell drifts and strikes lightning at the
- * drone. Vents cannot be shot; shards, brambles and storm cells can. */
+ * drone, an aurora ribbon drifts slowly and burns on touch. Vents cannot be
+ * shot; shards, brambles, storm cells and aurora ribbons can. */
 export function spawnHazard(rng, kind, x, y) {
   const base = { kind: 'hazard', hazard: kind, x, y, vx: 0, vy: 0, flash: 0 };
   if (kind === 'vent') {
@@ -76,6 +86,12 @@ export function spawnHazard(rng, kind, x, y) {
   if (kind === 'shard') {
     const a = rng.range(0, Math.PI * 2);
     return { ...base, radius: 16, hp: HAZARD.shardHp, maxHp: HAZARD.shardHp, vx: Math.cos(a) * HAZARD.shardSpeed, vy: Math.sin(a) * HAZARD.shardSpeed, life: HAZARD.shardLife, phase: rng.range(0, Math.PI * 2) };
+  }
+  if (kind === 'aurora') {
+    // A slow-drifting ribbon, like a bramble that wanders: touch damage,
+    // shootable, gone after its life runs out.
+    const a = rng.range(0, Math.PI * 2);
+    return { ...base, radius: 18, hp: HAZARD.auroraHp, maxHp: HAZARD.auroraHp, vx: Math.cos(a) * HAZARD.auroraDrift, vy: Math.sin(a) * HAZARD.auroraDrift, life: HAZARD.auroraLife, phase: rng.range(0, Math.PI * 2) };
   }
   if (kind === 'storm') {
     const a = rng.range(0, Math.PI * 2);
@@ -97,7 +113,7 @@ export function spawnHazard(rng, kind, x, y) {
   return { ...base, radius: 18, hp: HAZARD.brambleHp, maxHp: HAZARD.brambleHp, life: HAZARD.brambleLife, phase: rng.range(0, Math.PI * 2) };
 }
 
-export function spawnMote(rng, x, y, value) {
+export function spawnMote(rng, x, y, value, golden) {
   const a = rng.range(0, Math.PI * 2);
   const sp = rng.range(20, 70);
   return {
@@ -107,8 +123,26 @@ export function spawnMote(rng, x, y, value) {
     vx: Math.cos(a) * sp,
     vy: Math.sin(a) * sp,
     radius: 8,
-    value: value ?? MOTE.value,
-    life: MOTE.life,
+    value: golden ? MOTE.goldenValue : (value ?? MOTE.value),
+    life: golden ? MOTE.goldenLife : MOTE.life,
+    golden: Boolean(golden),
+    phase: rng.range(0, Math.PI * 2),
+  };
+}
+
+/** A heart pickup: dropped by elites and bosses, drifts and magnetises like a
+ * mote, and restores one heart when the drone collects it. */
+export function spawnHeart(rng, x, y) {
+  const a = rng.range(0, Math.PI * 2);
+  const sp = rng.range(20, 50);
+  return {
+    kind: 'heart',
+    x,
+    y,
+    vx: Math.cos(a) * sp,
+    vy: Math.sin(a) * sp,
+    radius: 10,
+    life: 20,
     phase: rng.range(0, Math.PI * 2),
   };
 }
@@ -287,6 +321,9 @@ export function updateWisp(w, player, dt, time, fireOrb) {
     } else if (w.state === 'recover' && w.stateTimer <= 0) {
       w.state = 'hunt';
     }
+  } else if (w.type === 'warden') {
+    // Slow armored hexagon: it does not weave or lunge, it just keeps coming.
+    steerToward(w, player.x, player.y, dt, 200);
   } else {
     // Chaser, splitter and mini: straight pursuit with a little wobble.
     steerToward(w, player.x, player.y, dt, 300);
@@ -362,7 +399,8 @@ export function updateBoss(b, player, dt, time, fireOrb, spawnMini) {
 
 /** Hazards tick down: a vent erupts once and is gone, a shard drifts and fades,
  * a bramble waits until it is shot or the wave ends, a storm cell drifts, locks
- * onto the drone, and strikes lightning where it stood. */
+ * onto the drone, and strikes lightning where it stood, an aurora ribbon drifts
+ * slowly and fades. */
 export function updateHazard(h, dt, player) {
   h.flash = Math.max(0, h.flash - dt);
   h.phase = (h.phase ?? 0) + dt;
@@ -382,6 +420,11 @@ export function updateHazard(h, dt, player) {
     h.y += h.vy * dt;
     if (h.x < 20 || h.x > VIEW.width - 20) h.vx *= -1;
     if (h.y < 20 || h.y > VIEW.height - 20) h.vy *= -1;
+  } else if (h.hazard === 'aurora') {
+    h.x += h.vx * dt;
+    h.y += h.vy * dt;
+    if (h.x < 24 || h.x > VIEW.width - 24) h.vx *= -1;
+    if (h.y < 24 || h.y > VIEW.height - 24) h.vy *= -1;
   } else if (h.hazard === 'storm') {
     h.x += h.vx * dt;
     h.y += h.vy * dt;

@@ -1,6 +1,7 @@
 // Keyboard input: held keys give a movement vector every frame, and
 // edge-triggered actions (confirm, pause, dash, nova, overdrive, upgrade picks,
-// realm picks) are taken once per press. Four realms means four pick keys.
+// realm picks) are taken once per press. Five realms plus Endless Tide means
+// six pick keys.
 export const ACTION_CONFIRM = 1;
 export const ACTION_PAUSE = 2;
 export const ACTION_DASH = 4;
@@ -13,6 +14,8 @@ export const ACTION_LEFT = 256;
 export const ACTION_RIGHT = 512;
 export const ACTION_OVERDRIVE = 1024;
 export const ACTION_UPGRADE_4 = 2048;
+export const ACTION_UPGRADE_5 = 4096;
+export const ACTION_UPGRADE_6 = 8192;
 
 const MOVE_KEYS = {
   ArrowUp: [0, -1],
@@ -41,6 +44,8 @@ export function createInput(target) {
     if (event.code === 'Digit2') queued |= ACTION_UPGRADE_2;
     if (event.code === 'Digit3') queued |= ACTION_UPGRADE_3;
     if (event.code === 'Digit4') queued |= ACTION_UPGRADE_4;
+    if (event.code === 'Digit5') queued |= ACTION_UPGRADE_5;
+    if (event.code === 'Digit6') queued |= ACTION_UPGRADE_6;
     if (event.code === 'KeyM') queued |= ACTION_MUTE;
     if (event.code === 'ArrowLeft') queued |= ACTION_LEFT;
     if (event.code === 'ArrowRight') queued |= ACTION_RIGHT;

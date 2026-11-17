@@ -8,7 +8,7 @@
 // stages that scene instead of running the loop, paints it twice and sets
 // window.__shotReady for a screenshot. window.__lumenState exposes the live
 // world state for debugging and automated play-tests.
-import { BEST_KEY, STEP } from './config.js';
+import { BEST_KEY, REALMS_TOTAL, STEP } from './config.js';
 import { REALMS } from './arenas.js';
 import { isUnlocked, loadSave, overallBest, recordRun } from './save.js';
 import { createRandom } from './random.js';
@@ -27,6 +27,8 @@ import {
   ACTION_UPGRADE_2,
   ACTION_UPGRADE_3,
   ACTION_UPGRADE_4,
+  ACTION_UPGRADE_5,
+  ACTION_UPGRADE_6,
   createInput,
 } from './input.js';
 import { createRenderer, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_SELECT, SCREEN_TITLE, SCREEN_UPGRADE, SCREEN_WIN } from './render.js';
@@ -74,12 +76,13 @@ function runShot(name) {
   requestAnimationFrame(paint);
 }
 
-/** The first realm the player has not cleared yet, or the first realm. */
+/** The first realm the player has not cleared yet; once all five are cleared
+ * the map opens on Endless Tide (index 5). */
 function nextRealmIndex(save) {
   for (let i = 0; i < REALMS.length; i += 1) {
     if (isUnlocked(save, REALMS[i]) && !save.cleared.includes(REALMS[i].id)) return i;
   }
-  return 0;
+  return save.cleared.length >= REALMS_TOTAL ? REALMS.length : 0;
 }
 
 function runGame() {
@@ -97,13 +100,13 @@ function runGame() {
     status.textContent = message;
   }
 
-  function startGame(realm) {
+  function startGame(realm, endless) {
     audio.setRealm(realm.id);
     audio.unlock();
-    world.reset(realm);
+    world.reset(realm, { endless: Boolean(endless) });
     accumulator = 0;
     screen = SCREEN_PLAY;
-    announce(`Playing ${realm.name}. Three hearts. Gather the light.`);
+    announce(endless ? `Endless Tide in ${realm.name}. Waves without end.` : `Playing ${realm.name}. Three hearts. Gather the light.`);
   }
 
   function tryStartRealm(index) {
@@ -115,7 +118,19 @@ function runGame() {
       return;
     }
     selected = index;
-    startGame(realm);
+    startGame(realm, false);
+  }
+
+  function tryStartEndless() {
+    // Endless Tide opens once all five realms are cleared, in a random realm.
+    if (save.cleared.length < REALMS_TOTAL) {
+      audio.uiMove();
+      announce('Endless Tide is locked. Clear all five realms first.');
+      return;
+    }
+    selected = REALMS.length;
+    const realm = REALMS[Math.floor(Math.random() * REALMS.length)];
+    startGame(realm, true);
   }
 
   function endGame(won) {
@@ -158,29 +173,35 @@ function runGame() {
       if (actions & ACTION_CONFIRM) {
         audio.unlock();
         screen = SCREEN_SELECT;
-        announce('Choose your realm. 1, 2, 3 or 4, or arrows and Enter.');
+        announce('Choose your realm. 1 to 5, 6 for Endless Tide, or arrows and Enter.');
       }
       return;
     }
     if (screen === SCREEN_SELECT) {
+      const cards = REALMS.length + 1; // five realms plus Endless Tide
       if (actions & ACTION_LEFT) {
-        selected = (selected + REALMS.length - 1) % REALMS.length;
+        selected = (selected + cards - 1) % cards;
         audio.uiMove();
       } else if (actions & ACTION_RIGHT) {
-        selected = (selected + 1) % REALMS.length;
+        selected = (selected + 1) % cards;
         audio.uiMove();
       }
       if (actions & ACTION_UPGRADE_1) tryStartRealm(0);
       else if (actions & ACTION_UPGRADE_2) tryStartRealm(1);
       else if (actions & ACTION_UPGRADE_3) tryStartRealm(2);
       else if (actions & ACTION_UPGRADE_4) tryStartRealm(3);
-      else if (actions & ACTION_CONFIRM) tryStartRealm(selected);
+      else if (actions & ACTION_UPGRADE_5) tryStartRealm(4);
+      else if (actions & ACTION_UPGRADE_6) tryStartEndless();
+      else if (actions & ACTION_CONFIRM) {
+        if (selected === REALMS.length) tryStartEndless();
+        else tryStartRealm(selected);
+      }
       return;
     }
     if (screen === SCREEN_OVER || screen === SCREEN_WIN) {
       if (actions & ACTION_CONFIRM) {
         screen = SCREEN_SELECT;
-        announce('Choose your realm. 1, 2, 3 or 4, or arrows and Enter.');
+        announce('Choose your realm. 1 to 5, 6 for Endless Tide, or arrows and Enter.');
       }
       return;
     }

@@ -1,7 +1,8 @@
 // Lumen Harvest — the entry program (Node 22, standard library only). The game is
 // this directory's game/ folder: plain static files a desktop browser loads offline
-// (game/index.html and its ES modules, no library, no network request). This program
-// hands it in: it copies game/ and screenshots/ from beside this file to /output and
+// (game/index.html and its ES modules, no library, no network request). Five realms
+// — Ember, Frost, Void, Storm Reef and the Aurora Tide — plus Endless Tide once
+// all five are cleared. This program hands it in: it copies game/ and screenshots/ from beside this file to /output and
 // writes /output/dossier.json, the summary the judge reads, with the vendored
 // make.fun library.
 //

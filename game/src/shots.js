@@ -104,8 +104,9 @@ function recklessInput(state) {
 /**
  * Set `world` to the named scene and return the screen to draw over it, the best
  * score to show, and the map/title data. Any unknown name stages the title screen.
- * The select scene shows a campaign two realms in: Ember and Frost cleared, Void
- * open, the Storm Reef still locked — the map as a returning player sees it.
+ * The select scene shows a campaign three realms in: Ember, Frost and Void
+ * cleared, Storm open, the Aurora Tide still locked — the map as a returning
+ * player sees it.
  */
 export function stageShot(name, world) {
   const state = world.state;
@@ -115,13 +116,13 @@ export function stageShot(name, world) {
     return {
       screen: SCREEN_SELECT,
       best: 6100,
-      ui: { save: { best: { ember: 4200, frost: 6100, void: 0, storm: 0 }, bestCombo: { ember: 18, frost: 24, void: 0, storm: 0 }, cleared: ['ember', 'frost'], kills: 512, motes: 840, runs: 11, wins: 2 }, selected: 2 },
+      ui: { save: { best: { ember: 4200, frost: 6100, void: 3900, storm: 0, aurora: 0 }, bestCombo: { ember: 18, frost: 24, void: 21, storm: 0, aurora: 0 }, cleared: ['ember', 'frost', 'void'], kills: 512, motes: 840, runs: 11, wins: 3 }, selected: 3 },
     };
   }
   if (name === 'play' || name === 'upgrade' || name === 'end') {
-    // The play scene fights in the Storm Reef, the new fourth realm: snipers,
-    // orbiters, lightning cells and rain.
-    world.reset(REALMS[3]);
+    // The play scene fights in the Aurora Tide, the new fifth realm: ribbons,
+    // wardens, elites and the serpent's spiral.
+    world.reset(REALMS[4]);
     if (name === 'end') {
       // An early wave with full hearts: the reckless pilot gathers some light
       // first, then the dark catches it — a real run's end, not an instant death.

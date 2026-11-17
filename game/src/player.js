@@ -30,6 +30,9 @@ export function createPlayer() {
     novaMax: PLAYER.novaMax,
     moteBonus: 0,
     pierce: 0, // bullets punch through this many extra wisps
+    twin: false, // Twin Shot: a second bullet at a slight spread
+    goldenBoost: false, // Lumen Greed: motes worth more, more golden motes
+    chainEvery: undefined, // Chain Coil II sets this to 4; otherwise CHAIN.everyKills
     chain: false, // every Nth kill zaps the nearest wisp
     aegis: false, // a shield blocks one hit per wave
     shield: 0, // 1 while the wave's shield is up
@@ -135,5 +138,12 @@ export function updatePlayer(player, input, state, dt, fireBullet) {
     }
     const pierce = player.pierce + (surging ? OVERDRIVE.pierceBonus : 0);
     fireBullet(player.x + dx * (player.radius + 6), player.y + dy * (player.radius + 6), dx, dy, pierce);
+    if (player.twin) {
+      // Twin Shot: a second bullet at a ±0.12 rad spread off the first.
+      const a = 0.12;
+      const dx2 = dx * Math.cos(a) - dy * Math.sin(a);
+      const dy2 = dx * Math.sin(a) + dy * Math.cos(a);
+      fireBullet(player.x + dx2 * (player.radius + 6), player.y + dy2 * (player.radius + 6), dx2, dy2, pierce);
+    }
   }
 }

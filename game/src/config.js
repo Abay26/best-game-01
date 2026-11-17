@@ -1,12 +1,12 @@
 // Lumen Harvest — every number the game balances on, in one place. Tuning the
 // feel means editing here, never the rules: the drone, the wisps, the combo, the
 // motes, the hazards, the bosses and the new overdrive system all read from this
-// file. Four realms now: Ember, Frost, Void and the Storm Reef.
+// file. Five realms now: Ember, Frost, Void, Storm Reef and the Aurora Tide.
 export const VIEW = { width: 960, height: 600 };
 export const STEP = 1 / 60;
 export const BEST_KEY = 'lumen-harvest-best';
 export const WAVES_TOTAL = 10;
-export const REALMS_TOTAL = 4;
+export const REALMS_TOTAL = 5;
 
 // The fallback palette, used before any realm is chosen (title screen backdrop).
 export const PALETTE = {
@@ -27,6 +27,7 @@ export const PALETTE = {
   dasher: '#ff3860',
   sniper: '#ff5df2',
   orbiter: '#5df2ff',
+  warden: '#d8b25c',
   mini: '#ffb38a',
   orb: '#a5ff8a',
   text: '#eaf6ff',
@@ -68,11 +69,17 @@ export const OVERDRIVE = {
 };
 
 // Combo: pickups inside the window keep the streak alive; every five pickups
-// the multiplier climbs, up to x5.
+// the multiplier climbs, up to x5. At a 25 combo the harvest goes FRENZY: six
+// seconds of doubled score, then the streak resets and must be rebuilt.
 export const COMBO = {
   window: 2.5, // seconds between pickups before the streak resets
   perLevel: 5, // pickups per multiplier level
   maxLevel: 5, // x1 .. x5
+};
+
+export const FRENZY = {
+  combo: 25, // combo that triggers the frenzy
+  duration: 6, // seconds of doubled score
 };
 
 // Kill streaks: slaying without taking a hit builds a streak. At 8, 16 and 24
@@ -91,11 +98,15 @@ export const MOTE = {
   life: 14, // seconds before a mote fades out
   spawnInterval: 1.15,
   maxOnField: 9,
+  goldenValue: 30, // a golden mote's score before the combo multiplier
+  goldenChance: 0.12, // share of spawned motes that come up golden
+  goldenLife: 8, // golden motes burn out faster
 };
 
 // Per wisp type: hit points, speed, radius, score and the wave it first appears
 // in. The two new types: a sniper that holds range and fires a telegraphed bolt,
-// and an orbiter that circles the drone before diving at it.
+// and an orbiter that circles the drone before diving at it. The warden is the
+// new tank: slow, armored, worth 90, and it bursts into three motes when it falls.
 export const WISP = {
   chaser: { hp: 2, speed: 96, radius: 15, score: 25, firstWave: 1 },
   weaver: { hp: 2, speed: 82, radius: 14, score: 35, firstWave: 2 },
@@ -104,11 +115,12 @@ export const WISP = {
   dasher: { hp: 3, speed: 74, radius: 15, score: 60, firstWave: 6 },
   sniper: { hp: 2, speed: 52, radius: 14, score: 70, firstWave: 3 },
   orbiter: { hp: 2, speed: 108, radius: 13, score: 65, firstWave: 4 },
+  warden: { hp: 5, speed: 40, radius: 20, score: 90, firstWave: 5 },
   mini: { hp: 1, speed: 138, radius: 9, score: 15, firstWave: 3 },
 };
 
 export const SPITTER = {
-  shotInterval: 2.6,
+  shotInterval: 2.9,
   orbSpeed: 150,
   orbRadius: 6,
 };
@@ -122,7 +134,7 @@ export const DASHER = {
 
 export const SNIPER = {
   holdRange: 320, // preferred distance from the drone
-  aimTime: 0.7, // telegraphed aim before the bolt
+  aimTime: 0.85, // telegraphed aim before the bolt
   boltSpeed: 340,
   boltRadius: 5,
   shotInterval: 3.4,
@@ -153,7 +165,8 @@ export const BOSS = {
 
 // A realm's hazard: vents erupt where they are telegraphed, shards drift and
 // cut, brambles sit still and snag, storm cells drift and strike lightning at
-// the drone. A new one appears every few seconds from wave 2 on.
+// the drone, aurora ribbons drift and burn on touch. A new one appears every
+// few seconds from wave 2 on.
 export const HAZARD = {
   spawnInterval: 6.5,
   firstWave: 2,
@@ -171,6 +184,9 @@ export const HAZARD = {
   stormStrikeInterval: 2.6, // seconds between lightning strikes
   stormTelegraph: 0.8, // warning before a strike lands
   stormStrikeRadius: 46,
+  auroraHp: 3,
+  auroraLife: 18,
+  auroraDrift: 18, // slow ribbons, slower than storm cells
 };
 
 // Chain lightning: every Nth kill zaps the nearest wisp for this much damage.

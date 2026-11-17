@@ -2,55 +2,67 @@
 // counts grow, and the gaps shrink. Clearing a wave opens the upgrade screen,
 // where the player picks one of three upgrades — the choices that shape a run.
 // Each realm runs its own table: Ember is aggressive (dashers and spitters early),
-// Frost swarms slow weavers and splitters, Void is the balanced original, and the
-// Storm Reef leads with snipers and orbiters. Wave 10 of every realm is the boss:
-// the realm's boss plus a small escort.
+// Frost swarms slow weavers and splitters, Void is the balanced original, the
+// Storm Reef leads with snipers and orbiters, and the Aurora Tide mixes every
+// wisp type under its ribbons. Wave 10 of every realm is the boss: the realm's
+// boss plus a small escort. From wave 5 on, the armored warden joins every table.
 import { WISP } from './config.js';
 
 const WAVE_TABLES = {
   ember: [
-    { chaser: 6, spitter: 1 },
+    { chaser: 5, spitter: 1 },
     { chaser: 8, weaver: 2, spitter: 2 },
     { chaser: 9, weaver: 3, splitter: 2, spitter: 2 },
     { chaser: 10, weaver: 4, splitter: 3, spitter: 3, dasher: 1 },
-    { chaser: 11, weaver: 5, splitter: 3, spitter: 3, dasher: 2 },
-    { chaser: 12, weaver: 5, splitter: 4, spitter: 3, dasher: 2 },
-    { chaser: 13, weaver: 6, splitter: 4, spitter: 4, dasher: 3 },
-    { chaser: 14, weaver: 7, splitter: 5, spitter: 3, dasher: 3 },
-    { chaser: 15, weaver: 8, splitter: 5, spitter: 5, dasher: 4 },
+    { chaser: 11, weaver: 5, splitter: 3, spitter: 3, dasher: 2, warden: 1 },
+    { chaser: 12, weaver: 5, splitter: 4, spitter: 3, dasher: 2, warden: 1 },
+    { chaser: 13, weaver: 6, splitter: 4, spitter: 4, dasher: 3, warden: 1 },
+    { chaser: 14, weaver: 7, splitter: 5, spitter: 3, dasher: 3, warden: 2 },
+    { chaser: 15, weaver: 8, splitter: 5, spitter: 5, dasher: 4, warden: 2 },
   ],
   frost: [
-    { chaser: 5, weaver: 2 },
+    { chaser: 4, weaver: 2 },
     { chaser: 7, weaver: 4, splitter: 1 },
     { chaser: 8, weaver: 5, splitter: 3 },
     { chaser: 9, weaver: 6, splitter: 4, spitter: 2 },
-    { chaser: 10, weaver: 7, splitter: 4, spitter: 2, dasher: 1 },
-    { chaser: 11, weaver: 8, splitter: 5, spitter: 3, dasher: 2 },
-    { chaser: 12, weaver: 9, splitter: 5, spitter: 3, dasher: 3 },
-    { chaser: 13, weaver: 9, splitter: 6, spitter: 4, dasher: 3 },
-    { chaser: 14, weaver: 10, splitter: 6, spitter: 4, dasher: 4 },
+    { chaser: 10, weaver: 7, splitter: 4, spitter: 2, dasher: 1, warden: 1 },
+    { chaser: 11, weaver: 8, splitter: 5, spitter: 3, dasher: 2, warden: 1 },
+    { chaser: 12, weaver: 9, splitter: 5, spitter: 3, dasher: 3, warden: 1 },
+    { chaser: 13, weaver: 9, splitter: 6, spitter: 4, dasher: 3, warden: 2 },
+    { chaser: 14, weaver: 10, splitter: 6, spitter: 4, dasher: 4, warden: 2 },
   ],
   void: [
-    { chaser: 6 },
+    { chaser: 5 },
     { chaser: 8, weaver: 3 },
     { chaser: 9, weaver: 4, splitter: 2 },
     { chaser: 10, weaver: 5, splitter: 3, spitter: 2 },
-    { chaser: 11, weaver: 6, splitter: 3, spitter: 3 },
-    { chaser: 12, weaver: 6, splitter: 4, spitter: 3, dasher: 2 },
-    { chaser: 13, weaver: 7, splitter: 4, spitter: 4, dasher: 3 },
-    { chaser: 14, weaver: 8, splitter: 5, spitter: 4, dasher: 3 },
-    { chaser: 15, weaver: 9, splitter: 5, spitter: 5, dasher: 4 },
+    { chaser: 11, weaver: 6, splitter: 3, spitter: 3, warden: 1 },
+    { chaser: 12, weaver: 6, splitter: 4, spitter: 3, dasher: 2, warden: 1 },
+    { chaser: 13, weaver: 7, splitter: 4, spitter: 4, dasher: 3, warden: 1 },
+    { chaser: 14, weaver: 8, splitter: 5, spitter: 4, dasher: 3, warden: 2 },
+    { chaser: 15, weaver: 9, splitter: 5, spitter: 5, dasher: 4, warden: 2 },
   ],
   storm: [
-    { chaser: 5, sniper: 1 },
+    { chaser: 4, sniper: 1 },
     { chaser: 7, weaver: 2, sniper: 1 },
     { chaser: 8, weaver: 3, splitter: 2, sniper: 2 },
     { chaser: 9, weaver: 4, splitter: 2, sniper: 2, orbiter: 1 },
-    { chaser: 10, weaver: 5, splitter: 3, spitter: 2, sniper: 2, orbiter: 2 },
-    { chaser: 11, weaver: 6, splitter: 3, spitter: 3, sniper: 2, orbiter: 2, dasher: 1 },
-    { chaser: 12, weaver: 6, splitter: 4, spitter: 3, sniper: 3, orbiter: 2, dasher: 2 },
-    { chaser: 13, weaver: 7, splitter: 4, spitter: 4, sniper: 3, orbiter: 3, dasher: 2 },
-    { chaser: 14, weaver: 8, splitter: 5, spitter: 4, sniper: 3, orbiter: 3, dasher: 3 },
+    { chaser: 10, weaver: 5, splitter: 3, spitter: 2, sniper: 2, orbiter: 2, warden: 1 },
+    { chaser: 11, weaver: 6, splitter: 3, spitter: 3, sniper: 2, orbiter: 2, dasher: 1, warden: 1 },
+    { chaser: 12, weaver: 6, splitter: 4, spitter: 3, sniper: 3, orbiter: 2, dasher: 2, warden: 1 },
+    { chaser: 13, weaver: 7, splitter: 4, spitter: 4, sniper: 3, orbiter: 3, dasher: 2, warden: 2 },
+    { chaser: 14, weaver: 8, splitter: 5, spitter: 4, sniper: 3, orbiter: 3, dasher: 3, warden: 2 },
+  ],
+  aurora: [
+    { chaser: 5, weaver: 1 },
+    { chaser: 6, weaver: 3, sniper: 1 },
+    { chaser: 7, weaver: 4, splitter: 2, sniper: 1 },
+    { chaser: 8, weaver: 5, splitter: 3, spitter: 2, sniper: 2, orbiter: 1 },
+    { chaser: 9, weaver: 5, splitter: 3, spitter: 3, sniper: 2, orbiter: 1, warden: 1 },
+    { chaser: 10, weaver: 6, splitter: 4, spitter: 3, sniper: 2, orbiter: 2, dasher: 1, warden: 1 },
+    { chaser: 11, weaver: 6, splitter: 4, spitter: 3, sniper: 3, orbiter: 2, dasher: 2, warden: 1 },
+    { chaser: 12, weaver: 7, splitter: 5, spitter: 4, sniper: 3, orbiter: 3, dasher: 2, warden: 2 },
+    { chaser: 13, weaver: 8, splitter: 5, spitter: 4, sniper: 3, orbiter: 3, dasher: 3, warden: 2 },
   ],
 };
 
@@ -68,9 +80,9 @@ export function waveQueue(wave, rng, realmId) {
   return rng.shuffle(queue);
 }
 
-/** Gap between spawns shrinks as the waves climb: 1.15s early, 0.45s by wave 10. */
+/** Gap between spawns shrinks as the waves climb: 1.15s early, 0.5s by wave 10. */
 export function spawnGap(wave) {
-  return Math.max(0.45, 1.15 - (wave - 1) * 0.08);
+  return Math.max(0.5, 1.15 - (wave - 1) * 0.08);
 }
 
 export const UPGRADE_POOL = [
@@ -185,6 +197,45 @@ export const UPGRADE_POOL = [
     apply(p) {
       p.aegis = true;
       p.shield = 1;
+    },
+  },
+  {
+    id: 'twin',
+    name: 'Twin Shot',
+    icon: '✕',
+    desc: 'Fire a second bullet at a spread.',
+    apply(p) {
+      p.twin = true;
+    },
+  },
+  {
+    id: 'vessel',
+    name: 'Heart Vessel',
+    icon: '♥+',
+    desc: '+1 max heart and heal 1.',
+    apply(p) {
+      p.maxHearts = Math.min(6, p.maxHearts + 1);
+      p.hearts = Math.min(p.maxHearts, p.hearts + 1);
+    },
+  },
+  {
+    id: 'greed',
+    name: 'Lumen Greed',
+    icon: '❖',
+    desc: 'Motes +10 value, more golden motes.',
+    apply(p) {
+      p.moteBonus = (p.moteBonus ?? 0) + 10;
+      p.goldenBoost = true;
+    },
+  },
+  {
+    id: 'chain2',
+    name: 'Chain Coil II',
+    icon: 'ϟϟ',
+    desc: 'Chain lightning every 4th kill.',
+    apply(p) {
+      p.chain = true;
+      p.chainEvery = 4;
     },
   },
 ];
