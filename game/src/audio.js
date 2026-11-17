@@ -10,11 +10,12 @@ let musicStep = 0;
 const BASS_NOTES = [55, 55, 65.41, 49]; // A1 A1 C2 G1, one bar of four pulses
 
 // Each realm hums in its own key: Ember burns in A minor, Frost holds in D minor,
-// the Void Garden drifts in E minor.
+// the Void Garden drifts in E minor, the Storm Reef rolls in F minor.
 const REALM_BASS = {
   ember: [55, 55, 65.41, 49],
   frost: [73.42, 73.42, 87.31, 65.41],
   void: [82.41, 82.41, 98, 73.42],
+  storm: [87.31, 87.31, 103.83, 77.78],
 };
 let bassNotes = BASS_NOTES;
 
@@ -132,6 +133,23 @@ export const audio = {
     noise(0.7, 0.25, 600);
     tone(90, 0.6, 'sine', 0.16, 30);
     tone(440, 0.4, 'triangle', 0.06, 880);
+  },
+  /** Overdrive surge: a rising sweep with a crack of static. */
+  overdrive() {
+    tone(180, 0.5, 'sawtooth', 0.1, 980);
+    noise(0.3, 0.1, 4000);
+    tone(880, 0.3, 'triangle', 0.07, 1320);
+  },
+  /** Chain lightning: a sharp electric snap. */
+  chain() {
+    noise(0.12, 0.12, 5200);
+    tone(1400, 0.1, 'square', 0.05, 500);
+  },
+  /** A streak tier: a short triumphant climb. */
+  streak() {
+    [659, 880, 1109].forEach((f, i) => {
+      window.setTimeout(() => tone(f, 0.14, 'triangle', 0.08), i * 70);
+    });
   },
   upgrade() {
     [523, 659, 784, 1047].forEach((f, i) => {

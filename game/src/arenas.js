@@ -1,7 +1,9 @@
-// Lumen Harvest — the three realms. One harvester, three arenas, each with its own
-// palette, enemy colours, drifting ambient life, a hazard that shapes the fight and
-// a boss at the end of its tenth wave. The campaign runs them in order: a realm
-// opens once the realms before it are cleared, so the map itself is the progress.
+// Lumen Harvest — the four realms. One harvester, four arenas, each with its own
+// palette, enemy colours, drifting ambient life, a hazard that shapes the fight
+// and a boss at the end of its tenth wave. The campaign runs them in order: a
+// realm opens once the realms before it are cleared, so the map itself is the
+// progress. The Storm Reef is the new fourth realm: lightning, rain and a boss
+// that fires its orbs in a spiral.
 export const REALMS = [
   {
     id: 'ember',
@@ -26,12 +28,14 @@ export const REALMS = [
       splitter: '#ffc46b',
       spitter: '#ff7a59',
       dasher: '#ff3860',
+      sniper: '#ff5df2',
+      orbiter: '#5df2ff',
       mini: '#ffb38a',
     },
     hazard: 'vent',
     hazardColor: '#ff7a2a',
     ambient: 'embers', // glowing cinders rising
-    boss: { name: 'Ember Colossus', color: '#ff6a2a', hp: 46, burst: 8, minis: 2 },
+    boss: { name: 'Ember Colossus', color: '#ff6a2a', hp: 46, burst: 8, minis: 2, spiral: false },
   },
   {
     id: 'frost',
@@ -56,17 +60,19 @@ export const REALMS = [
       splitter: '#bfe9ff',
       spitter: '#7db8ff',
       dasher: '#4d9fff',
+      sniper: '#ff5df2',
+      orbiter: '#5df2ff',
       mini: '#cfeeff',
     },
     hazard: 'shard',
     hazardColor: '#9fe8ff',
     ambient: 'snow', // snowflakes drifting down
-    boss: { name: 'Glacier Warden', color: '#5dc8ff', hp: 56, burst: 10, minis: 2 },
+    boss: { name: 'Glacier Warden', color: '#5dc8ff', hp: 56, burst: 10, minis: 2, spiral: false },
   },
   {
     id: 'void',
     name: 'Void Garden',
-    tagline: 'The old dark, overgrown and blooming',
+    tagline: 'The old dark, overgrown',
     unlock: 2,
     palette: {
       bgTop: '#0a0e1e',
@@ -86,16 +92,56 @@ export const REALMS = [
       splitter: '#ff9f43',
       spitter: '#7dff6a',
       dasher: '#ff3860',
+      sniper: '#ff5df2',
+      orbiter: '#5df2ff',
       mini: '#ffb38a',
     },
     hazard: 'bramble',
     hazardColor: '#b388ff',
     ambient: 'spores', // slow violet spores drifting
-    boss: { name: 'Void Bloom', color: '#b388ff', hp: 40, burst: 8, minis: 4 },
+    boss: { name: 'Void Bloom', color: '#b388ff', hp: 40, burst: 8, minis: 4, spiral: false },
+  },
+  {
+    id: 'storm',
+    name: 'Storm Reef',
+    tagline: 'Lightning over a drowned reef',
+    unlock: 3,
+    palette: {
+      bgTop: '#04141a',
+      bgBottom: '#0a2e33',
+      nebulaA: '#0f5e6b',
+      nebulaB: '#1d8a7a',
+      star: '#d8fff4',
+      accent: '#5df2d6',
+      mote: '#7dffd4',
+      moteCore: '#eafffa',
+      player: '#ffd166',
+      border: 'rgba(93, 242, 214, 0.32)',
+    },
+    enemyColors: {
+      chaser: '#5df2d6',
+      weaver: '#7dffd4',
+      splitter: '#a5ffe9',
+      spitter: '#3fd6b2',
+      dasher: '#2ad4ff',
+      sniper: '#ff5df2',
+      orbiter: '#5df2ff',
+      mini: '#c8fff0',
+    },
+    hazard: 'storm',
+    hazardColor: '#5df2d6',
+    ambient: 'rain', // slanted rain streaks
+    boss: { name: 'Tempest Leviathan', color: '#2ad4ff', hp: 64, burst: 12, minis: 3, spiral: true },
   },
 ];
 
 /** The realm with this id, or the first realm when the id is unknown. */
 export function realmById(id) {
   return REALMS.find((r) => r.id === id) ?? REALMS[0];
+}
+
+/** The realm after this one in the campaign, or null at the end. */
+export function nextRealm(realm) {
+  const i = REALMS.findIndex((r) => r.id === realm.id);
+  return i >= 0 && i + 1 < REALMS.length ? REALMS[i + 1] : null;
 }

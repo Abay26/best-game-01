@@ -1,28 +1,32 @@
 // Lumen Harvest — boot and the one loop: input is read every frame, the world
 // advances in fixed 1/60 s steps, and the renderer paints what is there. The game
 // moves between seven screens: title, realm map, play, upgrade, paused, game over
-// and win.
+// and win. A boss kill freezes the world for a beat (hit-stop) before the loop
+// resumes.
 //
 // ?seed=N fixes the field. ?shot=start|select|play|upgrade|end (with &seed=N)
 // stages that scene instead of running the loop, paints it twice and sets
-// window.__shotReady for a screenshot.
+// window.__shotReady for a screenshot. window.__lumenState exposes the live
+// world state for debugging and automated play-tests.
 import { BEST_KEY, STEP } from './config.js';
 import { REALMS } from './arenas.js';
 import { isUnlocked, loadSave, overallBest, recordRun } from './save.js';
 import { createRandom } from './random.js';
 import { audio } from './audio.js';
-import { createWorld, EVENT_DASH, EVENT_HIT, EVENT_KILL, EVENT_NOVA, EVENT_OVER, EVENT_PICKUP, EVENT_SHOT, EVENT_UPGRADE, EVENT_WIN } from './world.js';
+import { createWorld, EVENT_CHAIN, EVENT_DASH, EVENT_HIT, EVENT_KILL, EVENT_NOVA, EVENT_OVER, EVENT_OVERDRIVE, EVENT_PICKUP, EVENT_SHOT, EVENT_STREAK, EVENT_UPGRADE, EVENT_WIN } from './world.js';
 import {
   ACTION_CONFIRM,
   ACTION_DASH,
   ACTION_LEFT,
   ACTION_MUTE,
   ACTION_NOVA,
+  ACTION_OVERDRIVE,
   ACTION_PAUSE,
   ACTION_RIGHT,
   ACTION_UPGRADE_1,
   ACTION_UPGRADE_2,
   ACTION_UPGRADE_3,
+  ACTION_UPGRADE_4,
   createInput,
 } from './input.js';
 import { createRenderer, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_SELECT, SCREEN_TITLE, SCREEN_UPGRADE, SCREEN_WIN } from './render.js';
@@ -40,6 +44,7 @@ const canvas = document.getElementById('game');
 const status = document.getElementById('status');
 const world = createWorld(createRandom(seed));
 const renderer = createRenderer(canvas);
+window.__lumenState = world.state;
 
 function readBest() {
   try {
@@ -118,6 +123,7 @@ function runGame() {
       score: world.state.score,
       kills: world.state.kills,
       motes: world.state.motesCollected,
+      maxCombo: world.state.maxCombo,
       won,
     });
     save = loadSave();
@@ -132,6 +138,9 @@ function runGame() {
     if (events & EVENT_SHOT) audio.shoot();
     if (events & EVENT_DASH) audio.dash();
     if (events & EVENT_NOVA) audio.nova();
+    if (events & EVENT_OVERDRIVE) audio.overdrive();
+    if (events & EVENT_CHAIN) audio.chain();
+    if (events & EVENT_STREAK) audio.streak();
     if (events & EVENT_PICKUP) audio.pickup(Math.min(5, Math.floor(world.state.combo / 5) + 1));
     if (events & EVENT_KILL) audio.explosion(false);
     if (events & EVENT_HIT) audio.hit();
@@ -149,7 +158,7 @@ function runGame() {
       if (actions & ACTION_CONFIRM) {
         audio.unlock();
         screen = SCREEN_SELECT;
-        announce('Choose your realm. 1, 2 or 3, or arrows and Enter.');
+        announce('Choose your realm. 1, 2, 3 or 4, or arrows and Enter.');
       }
       return;
     }
@@ -164,13 +173,14 @@ function runGame() {
       if (actions & ACTION_UPGRADE_1) tryStartRealm(0);
       else if (actions & ACTION_UPGRADE_2) tryStartRealm(1);
       else if (actions & ACTION_UPGRADE_3) tryStartRealm(2);
+      else if (actions & ACTION_UPGRADE_4) tryStartRealm(3);
       else if (actions & ACTION_CONFIRM) tryStartRealm(selected);
       return;
     }
     if (screen === SCREEN_OVER || screen === SCREEN_WIN) {
       if (actions & ACTION_CONFIRM) {
         screen = SCREEN_SELECT;
-        announce('Choose your realm. 1, 2 or 3, or arrows and Enter.');
+        announce('Choose your realm. 1, 2, 3 or 4, or arrows and Enter.');
       }
       return;
     }
@@ -220,6 +230,7 @@ function runGame() {
       fire: input.fireHeld(),
       dash: Boolean(actions & ACTION_DASH),
       nova: Boolean(actions & ACTION_NOVA),
+      overdrive: Boolean(actions & ACTION_OVERDRIVE),
     };
     const events = world.step(STEP, frameInput, false);
     playSounds(events);
@@ -234,8 +245,16 @@ function runGame() {
 
   function frame(now) {
     requestAnimationFrame(frame);
-    accumulator += Math.min((now - last) / 1000, MAX_FRAME);
+    const frameDt = Math.min((now - last) / 1000, MAX_FRAME);
+    accumulator += frameDt;
     last = now;
+    // Hit-stop: after a boss falls the world freezes for a beat, then resumes.
+    if (world.state.hitstop > 0) {
+      world.state.hitstop -= frameDt;
+      accumulator = 0;
+      renderer.draw(world.state, screen, best, { save, selected });
+      return;
+    }
     const actions = input.takeActions();
     handleActions(actions);
     if (screen === SCREEN_TITLE || screen === SCREEN_SELECT || screen === SCREEN_PLAY) {

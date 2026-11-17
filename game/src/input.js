@@ -1,5 +1,6 @@
-// Keyboard input: held keys give a movement vector every frame, and edge-triggered
-// actions (confirm, pause, dash, nova, upgrade picks) are taken once per press.
+// Keyboard input: held keys give a movement vector every frame, and
+// edge-triggered actions (confirm, pause, dash, nova, overdrive, upgrade picks,
+// realm picks) are taken once per press. Four realms means four pick keys.
 export const ACTION_CONFIRM = 1;
 export const ACTION_PAUSE = 2;
 export const ACTION_DASH = 4;
@@ -10,6 +11,8 @@ export const ACTION_UPGRADE_3 = 64;
 export const ACTION_MUTE = 128;
 export const ACTION_LEFT = 256;
 export const ACTION_RIGHT = 512;
+export const ACTION_OVERDRIVE = 1024;
+export const ACTION_UPGRADE_4 = 2048;
 
 const MOVE_KEYS = {
   ArrowUp: [0, -1],
@@ -33,9 +36,11 @@ export function createInput(target) {
     if (event.code === 'KeyP' || event.code === 'Escape') queued |= ACTION_PAUSE;
     if (event.code === 'ShiftLeft' || event.code === 'ShiftRight' || event.code === 'KeyJ') queued |= ACTION_DASH;
     if (event.code === 'KeyE' || event.code === 'KeyK') queued |= ACTION_NOVA;
+    if (event.code === 'KeyQ' || event.code === 'KeyL') queued |= ACTION_OVERDRIVE;
     if (event.code === 'Digit1') queued |= ACTION_UPGRADE_1;
     if (event.code === 'Digit2') queued |= ACTION_UPGRADE_2;
     if (event.code === 'Digit3') queued |= ACTION_UPGRADE_3;
+    if (event.code === 'Digit4') queued |= ACTION_UPGRADE_4;
     if (event.code === 'KeyM') queued |= ACTION_MUTE;
     if (event.code === 'ArrowLeft') queued |= ACTION_LEFT;
     if (event.code === 'ArrowRight') queued |= ACTION_RIGHT;

@@ -1,10 +1,11 @@
-// Staged screenshot scenes behind ?shot=start|select|play|upgrade|end. Each one plays
-// the real rules forward from a fresh world for a fixed time, steered by an autopilot,
-// so the frame is what a short game really looks like — and the same seed always
-// gives the same frame. The pilot chases the nearest mote, keeps clear of wisps,
-// fires whenever it can, and dashes out of trouble; the end scene's pilot never
-// shoots and never dashes, so the dark catches it, as it catches a hurried player.
-import { STEP, VIEW } from './config.js';
+// Staged screenshot scenes behind ?shot=start|select|play|upgrade|end. Each one
+// plays the real rules forward from a fresh world for a fixed time, steered by an
+// autopilot, so the frame is what a short game really looks like — and the same
+// seed always gives the same frame. The pilot chases the nearest mote, keeps
+// clear of wisps, fires whenever it can, dashes out of trouble and surges into
+// overdrive when the meter is full; the end scene's pilot never shoots and never
+// dashes, so the dark catches it, as it catches a hurried player.
+import { OVERDRIVE, STEP, VIEW } from './config.js';
 import { REALMS } from './arenas.js';
 import { EVENT_OVER, EVENT_UPGRADE } from './world.js';
 import { SCREEN_OVER, SCREEN_PLAY, SCREEN_SELECT, SCREEN_TITLE, SCREEN_UPGRADE } from './render.js';
@@ -69,6 +70,7 @@ function pilotInput(state, recklessness) {
     fire: recklessness < 1,
     dash: recklessness < 1 && threat !== null && threatD < 95 && p.dashCooldown <= 0,
     nova: false,
+    overdrive: recklessness < 1 && p.overdrive >= OVERDRIVE.max,
   };
 }
 
@@ -95,14 +97,15 @@ function recklessInput(state) {
     fire: false,
     dash: false,
     nova: false,
+    overdrive: false,
   };
 }
 
 /**
  * Set `world` to the named scene and return the screen to draw over it, the best
  * score to show, and the map/title data. Any unknown name stages the title screen.
- * The select scene shows a campaign already one realm in: Ember cleared, Frost
- * open, Void still locked — the map as a returning player sees it.
+ * The select scene shows a campaign two realms in: Ember and Frost cleared, Void
+ * open, the Storm Reef still locked — the map as a returning player sees it.
  */
 export function stageShot(name, world) {
   const state = world.state;
@@ -111,13 +114,14 @@ export function stageShot(name, world) {
     for (let i = 0; i < START_SECONDS / STEP; i += 1) world.step(STEP, null, true);
     return {
       screen: SCREEN_SELECT,
-      best: 4200,
-      ui: { save: { best: { ember: 4200, frost: 0, void: 0 }, cleared: ['ember'], kills: 312, motes: 540, runs: 6, wins: 1 }, selected: 1 },
+      best: 6100,
+      ui: { save: { best: { ember: 4200, frost: 6100, void: 0, storm: 0 }, bestCombo: { ember: 18, frost: 24, void: 0, storm: 0 }, cleared: ['ember', 'frost'], kills: 512, motes: 840, runs: 11, wins: 2 }, selected: 2 },
     };
   }
   if (name === 'play' || name === 'upgrade' || name === 'end') {
-    // The play scene fights in the Ember Wastes, the first realm.
-    world.reset(REALMS[0]);
+    // The play scene fights in the Storm Reef, the new fourth realm: snipers,
+    // orbiters, lightning cells and rain.
+    world.reset(REALMS[3]);
     if (name === 'end') {
       // An early wave with full hearts: the reckless pilot gathers some light
       // first, then the dark catches it — a real run's end, not an instant death.
@@ -135,12 +139,12 @@ export function stageShot(name, world) {
       }
       if (name === 'play' && state.wave >= 4 && state.wisps.length >= 6) break;
     }
-    if (name === 'end') return { screen: SCREEN_OVER, best: state.score, ui: { save: { best: { ember: state.score }, cleared: [], kills: state.kills, motes: state.motesCollected, runs: 1, wins: 0 }, selected: 0 } };
-    if (name === 'upgrade' && state.waveState === 'upgrade') return { screen: SCREEN_UPGRADE, best: state.score, ui: { save: { best: {}, cleared: [], kills: 0, motes: 0, runs: 0, wins: 0 }, selected: 0 } };
-    return { screen: SCREEN_PLAY, best: state.score, ui: { save: { best: {}, cleared: [], kills: 0, motes: 0, runs: 0, wins: 0 }, selected: 0 } };
+    if (name === 'end') return { screen: SCREEN_OVER, best: state.score, ui: { save: { best: { ember: state.score }, bestCombo: { ember: state.maxCombo }, cleared: [], kills: state.kills, motes: state.motesCollected, runs: 1, wins: 0 }, selected: 0 } };
+    if (name === 'upgrade' && state.waveState === 'upgrade') return { screen: SCREEN_UPGRADE, best: state.score, ui: { save: { best: {}, bestCombo: {}, cleared: [], kills: 0, motes: 0, runs: 0, wins: 0 }, selected: 0 } };
+    return { screen: SCREEN_PLAY, best: state.score, ui: { save: { best: {}, bestCombo: {}, cleared: [], kills: 0, motes: 0, runs: 0, wins: 0 }, selected: 0 } };
   }
   // Title: let the backdrop drift for a few seconds, then show the title screen.
   world.seedBackdrop();
   for (let i = 0; i < START_SECONDS / STEP; i += 1) world.step(STEP, null, true);
-  return { screen: SCREEN_TITLE, best: 0, ui: { save: { best: { ember: 4200, frost: 0, void: 0 }, cleared: ['ember'], kills: 312, motes: 540, runs: 6, wins: 1 }, selected: 0 } };
+  return { screen: SCREEN_TITLE, best: 0, ui: { save: { best: { ember: 4200, frost: 6100, void: 0, storm: 0 }, bestCombo: { ember: 18, frost: 24, void: 0, storm: 0 }, cleared: ['ember', 'frost'], kills: 512, motes: 840, runs: 11, wins: 2 }, selected: 0 } };
 }

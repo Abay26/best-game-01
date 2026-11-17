@@ -1,6 +1,8 @@
-// The harvester drone: movement, dash with i-frames, auto-aimed fire, nova bombs.
-// The player object carries its own upgradeable stats so upgrades are plain data.
-import { PLAYER, VIEW } from './config.js';
+// The harvester drone: movement, dash with i-frames, auto-aimed fire, nova
+// bombs, and the overdrive surge. The player object carries its own upgradeable
+// stats so upgrades are plain data: fire rate, damage, speed, magnet, dash,
+// novas, pierce, chain lightning, overdrive and the aegis shield.
+import { OVERDRIVE, PLAYER, VIEW } from './config.js';
 
 export function createPlayer() {
   return {
@@ -27,9 +29,22 @@ export function createPlayer() {
     novas: PLAYER.novaStart,
     novaMax: PLAYER.novaMax,
     moteBonus: 0,
+    pierce: 0, // bullets punch through this many extra wisps
+    chain: false, // every Nth kill zaps the nearest wisp
+    aegis: false, // a shield blocks one hit per wave
+    shield: 0, // 1 while the wave's shield is up
+    overdrive: 0, // meter 0..100; full means Q is ready
+    overdriveTime: 0, // seconds of surge left
+    overdriveDuration: OVERDRIVE.duration,
+    overdriveFill: 1, // fill-rate multiplier from the Overdrive Cell
     alive: true,
     trail: [], // recent positions, drawn as a motion trail
   };
+}
+
+/** True while the surge is running: fire and flight both quicken. */
+export function isOverdrive(player) {
+  return player.overdriveTime > 0;
 }
 
 /** Nearest wisp to the player, or null when the field is empty. */
@@ -47,8 +62,9 @@ export function nearestWisp(player, wisps) {
 }
 
 /** Nearest thing worth shooting: the closest wisp, or the closest shootable
- * hazard (a shard or a bramble — vents cannot be shot). The drone's fire
- * auto-aims, so hazards must be valid targets or they could never be cleared. */
+ * hazard (a shard, a bramble or a storm cell — vents cannot be shot). The
+ * drone's fire auto-aims, so hazards must be valid targets or they could never
+ * be cleared. */
 export function nearestTarget(player, wisps, hazards) {
   let best = nearestWisp(player, wisps);
   let bestD = best ? (best.x - player.x) * (best.x - player.x) + (best.y - player.y) * (best.y - player.y) : Infinity;
@@ -67,7 +83,10 @@ export function updatePlayer(player, input, state, dt, fireBullet) {
   if (!player.alive) return;
   player.invuln = Math.max(0, player.invuln - dt);
   player.dashCooldown = Math.max(0, player.dashCooldown - dt);
+  player.overdriveTime = Math.max(0, player.overdriveTime - dt);
 
+  const surging = isOverdrive(player);
+  const moveSpeed = player.speed * (surging ? OVERDRIVE.speedMult : 1);
   const dir = input.direction();
   if (player.dashTimer > 0) {
     // Dashing: locked direction, triple speed, untouchable.
@@ -76,8 +95,8 @@ export function updatePlayer(player, input, state, dt, fireBullet) {
     player.vy = player.dashDirY * PLAYER.dashSpeed;
     player.invuln = Math.max(player.invuln, 0.05);
   } else {
-    player.vx = dir.x * player.speed;
-    player.vy = dir.y * player.speed;
+    player.vx = dir.x * moveSpeed;
+    player.vy = dir.y * moveSpeed;
     if (input.dash && player.dashCooldown <= 0 && (dir.x !== 0 || dir.y !== 0)) {
       player.dashTimer = PLAYER.dashTime;
       player.dashDirX = dir.x;
@@ -96,10 +115,10 @@ export function updatePlayer(player, input, state, dt, fireBullet) {
 
   // Fire: hold Space, bullets auto-aim at the nearest wisp or shootable hazard;
   // with nothing to aim at they fly in the direction the drone is moving (or up
-  // when still).
+  // when still). Overdrive shortens the interval and adds a piercing shot.
   player.fireTimer -= dt;
   if (input.fire && player.fireTimer <= 0) {
-    player.fireTimer = player.fireInterval;
+    player.fireTimer = player.fireInterval * (surging ? OVERDRIVE.fireMult : 1);
     const target = nearestTarget(player, state.wisps, state.hazards);
     let dx;
     let dy;
@@ -114,6 +133,7 @@ export function updatePlayer(player, input, state, dt, fireBullet) {
       dx = 0;
       dy = -1;
     }
-    fireBullet(player.x + dx * (player.radius + 6), player.y + dy * (player.radius + 6), dx, dy);
+    const pierce = player.pierce + (surging ? OVERDRIVE.pierceBonus : 0);
+    fireBullet(player.x + dx * (player.radius + 6), player.y + dy * (player.radius + 6), dx, dy, pierce);
   }
 }

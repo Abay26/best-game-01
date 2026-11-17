@@ -1,7 +1,9 @@
 // Everything that lives in the arena besides the player: wisps (the enemies),
-// bullets, lumen motes, hostile orbs, particles and floating score text. Each type
-// has its own shape of movement so the field reads at a glance.
-import { BOSS, DASHER, HAZARD, MOTE, PALETTE, SPITTER, VIEW, WISP } from './config.js';
+// bullets, lumen motes, hostile orbs, particles and floating score text. Each
+// type has its own shape of movement so the field reads at a glance. The new
+// types: a sniper that holds its range and fires a telegraphed bolt, and an
+// orbiter that circles the drone before diving at it.
+import { BOSS, DASHER, HAZARD, MOTE, ORBITER, PALETTE, SNIPER, SPITTER, VIEW, WISP } from './config.js';
 
 export function spawnWisp(rng, type, x, y, wave, realm) {
   if (type === 'boss') return spawnBoss(rng, x, y, realm);
@@ -21,16 +23,20 @@ export function spawnWisp(rng, type, x, y, wave, realm) {
     score: spec.score,
     color: (realm && realm.enemyColors[type]) || PALETTE[type] || PALETTE.chaser,
     phase: rng.range(0, Math.PI * 2),
-    state: 'hunt', // dasher: hunt -> windup -> lunge -> recover
+    state: 'hunt', // dasher: hunt -> windup -> lunge -> recover; sniper: hunt -> aim -> fire
     stateTimer: 0,
     shotTimer: rng.range(1, SPITTER.shotInterval),
+    aimX: 0, // sniper: the telegraphed aim point
+    aimY: 0,
+    orbitAngle: rng.range(0, Math.PI * 2), // orbiter: its angle around the drone
     flash: 0, // white flash frames after a hit
   };
 }
 
-/** The boss of a realm's tenth wave: huge, slow, and loud. */
+/** The boss of a realm's tenth wave: huge, slow, and loud. Spiral bosses weave
+ * a rotating helix into every second burst. */
 export function spawnBoss(rng, x, y, realm) {
-  const spec = (realm && realm.boss) || { name: 'Void Bloom', color: '#b388ff', hp: 40, burst: 8, minis: 4 };
+  const spec = (realm && realm.boss) || { name: 'Void Bloom', color: '#b388ff', hp: 40, burst: 8, minis: 4, spiral: false };
   return {
     kind: 'boss',
     type: 'boss',
@@ -47,10 +53,12 @@ export function spawnBoss(rng, x, y, realm) {
     name: spec.name,
     burst: spec.burst,
     minis: spec.minis,
+    spiral: Boolean(spec.spiral),
     phase: rng.range(0, Math.PI * 2),
     state: 'hunt', // hunt -> lunge -> recover
     stateTimer: 0,
     burstTimer: BOSS.burstInterval,
+    burstCount: 0,
     lungeTimer: BOSS.lungeInterval,
     summoned: false, // minis called in once at half health
     flash: 0,
@@ -58,7 +66,8 @@ export function spawnBoss(rng, x, y, realm) {
 }
 
 /** A realm hazard: a vent telegraphs then erupts, a shard drifts and cuts, a
- * bramble sits still and snags. Vents cannot be shot; shards and brambles can. */
+ * bramble sits still and snags, a storm cell drifts and strikes lightning at the
+ * drone. Vents cannot be shot; shards, brambles and storm cells can. */
 export function spawnHazard(rng, kind, x, y) {
   const base = { kind: 'hazard', hazard: kind, x, y, vx: 0, vy: 0, flash: 0 };
   if (kind === 'vent') {
@@ -67,6 +76,23 @@ export function spawnHazard(rng, kind, x, y) {
   if (kind === 'shard') {
     const a = rng.range(0, Math.PI * 2);
     return { ...base, radius: 16, hp: HAZARD.shardHp, maxHp: HAZARD.shardHp, vx: Math.cos(a) * HAZARD.shardSpeed, vy: Math.sin(a) * HAZARD.shardSpeed, life: HAZARD.shardLife, phase: rng.range(0, Math.PI * 2) };
+  }
+  if (kind === 'storm') {
+    const a = rng.range(0, Math.PI * 2);
+    return {
+      ...base,
+      radius: 26,
+      hp: HAZARD.stormHp,
+      maxHp: HAZARD.stormHp,
+      vx: Math.cos(a) * HAZARD.stormDrift,
+      vy: Math.sin(a) * HAZARD.stormDrift,
+      life: HAZARD.stormLife,
+      phase: rng.range(0, Math.PI * 2),
+      state: 'drift', // drift -> telegraph -> strike -> drift
+      stateTimer: HAZARD.stormStrikeInterval,
+      strikeX: 0,
+      strikeY: 0,
+    };
   }
   return { ...base, radius: 18, hp: HAZARD.brambleHp, maxHp: HAZARD.brambleHp, life: HAZARD.brambleLife, phase: rng.range(0, Math.PI * 2) };
 }
@@ -87,12 +113,15 @@ export function spawnMote(rng, x, y, value) {
   };
 }
 
-export function spawnBullet(x, y, dx, dy, speed, damage) {
-  return { kind: 'bullet', x, y, vx: dx * speed, vy: dy * speed, radius: 4, damage, life: 1.6 };
+export function spawnBullet(x, y, dx, dy, speed, damage, pierce) {
+  // hit remembers the wisps this bullet already punched through, so a piercing
+  // bullet never spends its pierce twice on the same wisp.
+  return { kind: 'bullet', x, y, vx: dx * speed, vy: dy * speed, radius: 4, damage, life: 1.6, pierce: pierce ?? 0, hit: new Set() };
 }
 
-export function spawnOrb(x, y, dx, dy) {
-  return { kind: 'orb', x, y, vx: dx * SPITTER.orbSpeed, vy: dy * SPITTER.orbSpeed, radius: SPITTER.orbRadius, life: 5 };
+export function spawnOrb(x, y, dx, dy, speed) {
+  const sp = speed ?? SPITTER.orbSpeed;
+  return { kind: 'orb', x, y, vx: dx * sp, vy: dy * sp, radius: SPITTER.orbRadius, life: 5 };
 }
 
 export function spawnParticle(list, x, y, color, count, speed, life, size) {
@@ -115,6 +144,13 @@ export function spawnParticle(list, x, y, color, count, speed, life, size) {
 
 export function spawnFloater(list, x, y, text, color) {
   list.push({ kind: 'floater', x, y, text, color, life: 0.9, maxLife: 0.9 });
+}
+
+/** A jagged lightning line from (x1, y1) to (x2, y2): the renderer draws it as
+ * a short-lived bolt. Stored as a particle with a target so the same list holds
+ * it. */
+export function spawnBolt(list, x1, y1, x2, y2, color) {
+  list.push({ kind: 'bolt', x: x1, y: y1, x2, y2, color, life: 0.18, maxLife: 0.18, radius: 2 });
 }
 
 function steerToward(w, tx, ty, dt, accel) {
@@ -160,6 +196,67 @@ export function updateWisp(w, player, dt, time, fireOrb) {
       w.shotTimer = SPITTER.shotInterval;
       fireOrb(w.x, w.y, dx / dist, dy / dist);
     }
+  } else if (w.type === 'sniper') {
+    // Holds its range, aims a thin beam at the drone, then fires a fast bolt.
+    const dx = player.x - w.x;
+    const dy = player.y - w.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    if (w.state === 'aim') {
+      w.vx = 0;
+      w.vy = 0;
+      w.aimX = player.x;
+      w.aimY = player.y;
+      if (w.stateTimer <= 0) {
+        const ax = w.aimX - w.x;
+        const ay = w.aimY - w.y;
+        const alen = Math.hypot(ax, ay) || 1;
+        fireOrb(w.x, w.y, ax / alen, ay / alen, SNIPER.boltSpeed);
+        w.state = 'hunt';
+        w.shotTimer = SNIPER.shotInterval;
+      }
+    } else {
+      const want = SNIPER.holdRange;
+      const toward = dist > want + 40 ? 1 : dist < want - 40 ? -1 : 0;
+      w.vx = (dx / dist) * w.speed * toward;
+      w.vy = (dy / dist) * w.speed * toward;
+      w.shotTimer -= dt;
+      if (w.shotTimer <= 0 && dist < 560) {
+        w.state = 'aim';
+        w.stateTimer = SNIPER.aimTime;
+        w.aimX = player.x;
+        w.aimY = player.y;
+      }
+    }
+  } else if (w.type === 'orbiter') {
+    // Circles the drone at a fixed radius, then dives straight at it.
+    const dx = player.x - w.x;
+    const dy = player.y - w.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    if (w.state === 'dive') {
+      if (w.stateTimer <= 0) {
+        w.state = 'recover';
+        w.stateTimer = ORBITER.recover;
+        w.vx = 0;
+        w.vy = 0;
+      }
+    } else if (w.state === 'recover') {
+      if (w.stateTimer <= 0) w.state = 'hunt';
+    } else {
+      w.orbitAngle += ORBITER.orbitSpeed * dt;
+      const wantX = player.x + Math.cos(w.orbitAngle) * ORBITER.orbitRadius;
+      const wantY = player.y + Math.sin(w.orbitAngle) * ORBITER.orbitRadius;
+      const ox = wantX - w.x;
+      const oy = wantY - w.y;
+      const olen = Math.hypot(ox, oy) || 1;
+      w.vx = (ox / olen) * w.speed;
+      w.vy = (oy / olen) * w.speed;
+      if (dist < ORBITER.orbitRadius + 40 && w.stateTimer <= 0) {
+        w.state = 'dive';
+        w.stateTimer = ORBITER.diveTime;
+        w.vx = (dx / dist) * ORBITER.diveSpeed;
+        w.vy = (dy / dist) * ORBITER.diveSpeed;
+      }
+    }
   } else if (w.type === 'dasher') {
     if (w.state === 'hunt') {
       steerToward(w, player.x, player.y, dt, 240);
@@ -202,7 +299,8 @@ export function updateWisp(w, player, dt, time, fireOrb) {
 }
 
 /** The boss: slow chase, a radial orb burst every few seconds, a charge at the
- * drone, and one call for minis when its health is halved. */
+ * drone, and one call for minis when its health is halved. Spiral bosses weave
+ * a rotating helix into every second burst instead of a plain ring. */
 export function updateBoss(b, player, dt, time, fireOrb, spawnMini) {
   b.flash = Math.max(0, b.flash - dt);
   b.phase += dt;
@@ -235,10 +333,19 @@ export function updateBoss(b, player, dt, time, fireOrb, spawnMini) {
 
   if (b.burstTimer <= 0) {
     b.burstTimer = BOSS.burstInterval;
-    const n = b.burst;
-    for (let i = 0; i < n; i += 1) {
-      const a = (i / n) * Math.PI * 2 + b.phase * 0.2;
-      fireOrb(b.x, b.y, Math.cos(a), Math.sin(a));
+    b.burstCount += 1;
+    if (b.spiral && b.burstCount % 2 === 0) {
+      // Helix: orbs leave on a rotating spiral, slow enough to thread through.
+      for (let i = 0; i < BOSS.spiralOrbs; i += 1) {
+        const a = (i / BOSS.spiralOrbs) * Math.PI * 2 + b.phase * 0.6;
+        fireOrb(b.x, b.y, Math.cos(a), Math.sin(a), BOSS.spiralSpeed);
+      }
+    } else {
+      const n = b.burst;
+      for (let i = 0; i < n; i += 1) {
+        const a = (i / n) * Math.PI * 2 + b.phase * 0.2;
+        fireOrb(b.x, b.y, Math.cos(a), Math.sin(a));
+      }
     }
   }
 
@@ -254,8 +361,9 @@ export function updateBoss(b, player, dt, time, fireOrb, spawnMini) {
 }
 
 /** Hazards tick down: a vent erupts once and is gone, a shard drifts and fades,
- * a bramble waits until it is shot or the wave ends. */
-export function updateHazard(h, dt) {
+ * a bramble waits until it is shot or the wave ends, a storm cell drifts, locks
+ * onto the drone, and strikes lightning where it stood. */
+export function updateHazard(h, dt, player) {
   h.flash = Math.max(0, h.flash - dt);
   h.phase = (h.phase ?? 0) + dt;
   h.life -= dt;
@@ -274,6 +382,26 @@ export function updateHazard(h, dt) {
     h.y += h.vy * dt;
     if (h.x < 20 || h.x > VIEW.width - 20) h.vx *= -1;
     if (h.y < 20 || h.y > VIEW.height - 20) h.vy *= -1;
+  } else if (h.hazard === 'storm') {
+    h.x += h.vx * dt;
+    h.y += h.vy * dt;
+    if (h.x < 30 || h.x > VIEW.width - 30) h.vx *= -1;
+    if (h.y < 30 || h.y > VIEW.height - 30) h.vy *= -1;
+    h.stateTimer -= dt;
+    if (h.state === 'drift' && h.stateTimer <= 0) {
+      // Lock onto the drone's position: the strike lands where it stood.
+      h.state = 'telegraph';
+      h.stateTimer = HAZARD.stormTelegraph;
+      h.strikeX = player ? player.x : h.x;
+      h.strikeY = player ? player.y : h.y;
+    } else if (h.state === 'telegraph' && h.stateTimer <= 0) {
+      h.state = 'strike';
+      h.stateTimer = 0.22; // the bolt itself, brief
+    } else if (h.state === 'strike' && h.stateTimer <= 0) {
+      h.state = 'drift';
+      h.stateTimer = HAZARD.stormStrikeInterval;
+      h.struck = false;
+    }
   }
 }
 
@@ -296,4 +424,19 @@ export function updateMote(m, player, dt) {
   }
   m.x += m.vx * dt;
   m.y += m.vy * dt;
+}
+
+/** Chain lightning: the nearest wisp within range takes a hit. Returns it, or
+ * null when nothing is in range. */
+export function nearestWispInRange(wisps, x, y, range) {
+  let best = null;
+  let bestD = range * range;
+  for (const w of wisps) {
+    const d = (w.x - x) * (w.x - x) + (w.y - y) * (w.y - y);
+    if (d < bestD) {
+      bestD = d;
+      best = w;
+    }
+  }
+  return best;
 }

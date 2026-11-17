@@ -1,10 +1,11 @@
 // Lumen Harvest — everything the eye sees. One canvas, one draw per frame: the
-// realm's own sky and drifting life, the arena, the HUD, the wave banners, and the
-// seven screens (title, realm map, play, upgrade, paused, game over and win).
+// realm's own sky and drifting life, the arena, the HUD, the wave banners, and
+// the seven screens (title, realm map, play, upgrade, paused, game over and win).
 // The world state is read-only here.
-import { COMBO, PALETTE, REALMS_TOTAL, VIEW, WAVES_TOTAL } from './config.js';
+import { COMBO, OVERDRIVE, PALETTE, REALMS_TOTAL, VIEW, WAVES_TOTAL } from './config.js';
 import { REALMS } from './arenas.js';
-import { isUnlocked, overallBest, realmBest } from './save.js';
+import { isOverdrive } from './player.js';
+import { isUnlocked, overallBest, overallBestCombo, realmBest, realmBestCombo } from './save.js';
 import { comboMultiplier } from './world.js';
 
 export const SCREEN_TITLE = 'title';
@@ -43,6 +44,17 @@ function starShape(ctx, x, y, r, points, rot) {
   ctx.fill();
 }
 
+/** A jagged lightning bolt between two points, drawn in three segments. */
+function boltShape(ctx, x1, y1, x2, y2, jitter) {
+  const mx = (x1 + x2) / 2 + (Math.random() - 0.5) * jitter;
+  const my = (y1 + y2) / 2 + (Math.random() - 0.5) * jitter;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(mx, my);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+}
+
 export function createRenderer(canvas) {
   const ctx = canvas.getContext('2d');
   canvas.width = VIEW.width;
@@ -77,16 +89,25 @@ export function createRenderer(canvas) {
     }
     ctx.globalAlpha = 1;
 
-    // The realm's drifting life: embers rise, snow falls, spores wander.
+    // The realm's drifting life: embers rise, snow falls, spores wander, rain slants.
     for (const a of state.ambient) {
       const flicker = 0.45 + 0.55 * Math.abs(Math.sin(a.tw * 2));
       ctx.globalAlpha = flicker * 0.8;
-      ctx.fillStyle = state.realm.ambient === 'snow' ? '#ffffff' : pal.accent;
-      circle(ctx, a.x, a.y, a.r);
+      if (state.realm.ambient === 'rain') {
+        ctx.strokeStyle = 'rgba(125, 255, 212, 0.55)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(a.x - 4, a.y + 12);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = state.realm.ambient === 'snow' ? '#ffffff' : pal.accent;
+        circle(ctx, a.x, a.y, a.r);
+      }
     }
     ctx.globalAlpha = 1;
 
-    // The ground each realm stands on: ash dunes, ice shards, or nothing but dark.
+    // The ground each realm stands on: ash dunes, ice shards, a drowned reef.
     if (state.realm.ambient === 'embers') {
       ctx.fillStyle = 'rgba(20, 8, 2, 0.85)';
       ctx.beginPath();
@@ -107,6 +128,20 @@ export function createRenderer(canvas) {
         const h = 18 + ((x / 64) % 3) * 12;
         ctx.lineTo(x + 32, VIEW.height - h);
         ctx.lineTo(x + 64, VIEW.height);
+      }
+      ctx.lineTo(VIEW.width, VIEW.height);
+      ctx.closePath();
+      ctx.fill();
+    } else if (state.realm.ambient === 'rain') {
+      ctx.fillStyle = 'rgba(4, 20, 26, 0.8)';
+      ctx.beginPath();
+      ctx.moveTo(0, VIEW.height);
+      for (let x = 0; x <= VIEW.width; x += 48) {
+        const h = 14 + ((x / 48) % 4) * 9;
+        ctx.lineTo(x + 12, VIEW.height - h);
+        ctx.lineTo(x + 24, VIEW.height - h * 0.4);
+        ctx.lineTo(x + 36, VIEW.height - h);
+        ctx.lineTo(x + 48, VIEW.height);
       }
       ctx.lineTo(VIEW.width, VIEW.height);
       ctx.closePath();
@@ -169,6 +204,16 @@ export function createRenderer(canvas) {
         ctx.arc(0, 0, w.radius + 6 + 14 * k, 0, Math.PI * 2);
         ctx.stroke();
       }
+      // Aim line while a sniper draws its bead on the drone.
+      if (w.type === 'sniper' && w.state === 'aim') {
+        const k = 1 - w.stateTimer / 0.7;
+        ctx.strokeStyle = `rgba(255, 93, 242, ${0.25 + 0.6 * k})`;
+        ctx.lineWidth = 1.5 + 1.5 * k;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(w.aimX - w.x, w.aimY - w.y);
+        ctx.stroke();
+      }
       ctx.shadowColor = w.color;
       ctx.shadowBlur = 12;
       ctx.fillStyle = w.flash > 0 ? '#ffffff' : w.color;
@@ -183,6 +228,29 @@ export function createRenderer(canvas) {
         ctx.lineTo(-w.radius * 0.9, w.radius);
         ctx.closePath();
         ctx.fill();
+      } else if (w.type === 'sniper') {
+        // A long diamond, pointed at its prey.
+        ctx.rotate(Math.atan2(state.player.y - w.y, state.player.x - w.x));
+        ctx.beginPath();
+        ctx.moveTo(w.radius + 6, 0);
+        ctx.lineTo(0, w.radius * 0.6);
+        ctx.lineTo(-w.radius - 4, 0);
+        ctx.lineTo(0, -w.radius * 0.6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#ffffff';
+        circle(ctx, 4, 0, 2.5);
+      } else if (w.type === 'orbiter') {
+        // A ringed orbiter: its orbit ring shows while it circles.
+        if (w.state === 'hunt') {
+          ctx.strokeStyle = hexA(w.color, 0.35);
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(0, 0, w.radius + 12, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        starShape(ctx, 0, 0, w.radius, 5, w.phase * 1.2);
       } else if (w.type === 'splitter' || w.type === 'mini') {
         starShape(ctx, 0, 0, w.radius, 6, w.phase * 0.6);
       } else {
@@ -252,6 +320,37 @@ export function createRenderer(canvas) {
         ctx.shadowBlur = 0;
         ctx.fillStyle = '#ffffff';
         circle(ctx, 0, 0, 3);
+      } else if (h.hazard === 'storm') {
+        // A drifting storm cell: a dark cloud that crackles, telegraphs a strike
+        // circle at the drone's feet, then throws a bolt down it.
+        ctx.shadowColor = hc;
+        ctx.shadowBlur = 16;
+        ctx.fillStyle = h.flash > 0 ? '#ffffff' : 'rgba(10, 30, 36, 0.9)';
+        circle(ctx, -8, 2, 16);
+        circle(ctx, 8, -2, 18);
+        circle(ctx, 0, 6, 14);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = hexA(hc, 0.7 + 0.3 * Math.sin(h.phase * 5));
+        starShape(ctx, 0, -2, 7, 4, h.phase);
+        if (h.state === 'telegraph') {
+          const k = 1 - h.stateTimer / 0.8;
+          ctx.strokeStyle = hexA(hc, 0.4 + 0.55 * k);
+          ctx.lineWidth = 2 + 2 * k;
+          ctx.beginPath();
+          ctx.arc(h.strikeX - h.x, h.strikeY - h.y, 46, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.fillStyle = hexA(hc, 0.1 + 0.22 * k);
+          ctx.beginPath();
+          ctx.arc(h.strikeX - h.x, h.strikeY - h.y, 46 * k, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (h.state === 'strike') {
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 3;
+          boltShape(ctx, 0, 0, h.strikeX - h.x, h.strikeY - h.y, 14);
+          ctx.strokeStyle = hexA(hc, 0.8);
+          ctx.lineWidth = 6;
+          boltShape(ctx, 0, 0, h.strikeX - h.x, h.strikeY - h.y, 14);
+        }
       } else {
         // Bramble: a snarl of thorns that snags the drone.
         ctx.shadowColor = hc;
@@ -271,7 +370,7 @@ export function createRenderer(canvas) {
         ctx.fillStyle = '#0a0e1e';
         circle(ctx, 0, 0, 7);
       }
-      // Hit-point pips under damaged shards and brambles.
+      // Hit-point pips under damaged shards, brambles and storm cells.
       if (h.hp && h.hp < h.maxHp) {
         ctx.fillStyle = 'rgba(255,255,255,0.75)';
         for (let i = 0; i < h.maxHp; i += 1) {
@@ -305,6 +404,17 @@ export function createRenderer(canvas) {
 
   function drawParticles(state) {
     for (const pt of state.particles) {
+      if (pt.kind === 'bolt') {
+        ctx.globalAlpha = Math.max(0, pt.life / pt.maxLife);
+        ctx.strokeStyle = pt.color;
+        ctx.lineWidth = 3;
+        boltShape(ctx, pt.x, pt.y, pt.x2, pt.y2, 10);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        boltShape(ctx, pt.x, pt.y, pt.x2, pt.y2, 10);
+        ctx.globalAlpha = 1;
+        continue;
+      }
       ctx.globalAlpha = Math.max(0, pt.life / pt.maxLife);
       ctx.fillStyle = pt.color;
       circle(ctx, pt.x, pt.y, pt.radius);
@@ -327,10 +437,11 @@ export function createRenderer(canvas) {
     const p = state.player;
     if (!p.alive) return;
     const pc = state.realm.palette.player;
-    // Motion trail.
+    const surging = isOverdrive(p);
+    // Motion trail, greener while surging.
     for (const t of p.trail) {
       ctx.globalAlpha = Math.max(0, t.life / 0.22) * 0.35;
-      ctx.fillStyle = pc;
+      ctx.fillStyle = surging ? PALETTE.overdrive : pc;
       circle(ctx, t.x, t.y, p.radius * 0.7);
     }
     ctx.globalAlpha = 1;
@@ -340,9 +451,9 @@ export function createRenderer(canvas) {
     ctx.translate(p.x, p.y);
     const angle = Math.atan2(p.vy, p.vx);
     ctx.rotate(p.vx !== 0 || p.vy !== 0 ? angle : -Math.PI / 2);
-    ctx.shadowColor = pc;
-    ctx.shadowBlur = 16;
-    ctx.fillStyle = pc;
+    ctx.shadowColor = surging ? PALETTE.overdrive : pc;
+    ctx.shadowBlur = surging ? 26 : 16;
+    ctx.fillStyle = surging ? PALETTE.overdrive : pc;
     ctx.beginPath();
     ctx.moveTo(p.radius + 6, 0);
     ctx.lineTo(-p.radius * 0.8, p.radius * 0.75);
@@ -354,6 +465,14 @@ export function createRenderer(canvas) {
     ctx.fillStyle = PALETTE.playerCore;
     circle(ctx, 2, 0, 4.5);
     ctx.restore();
+    // Aegis shield ring while the wave's shield is up.
+    if (p.shield > 0) {
+      ctx.strokeStyle = 'rgba(125, 255, 212, 0.65)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.radius + 7, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     // Dash cooldown ring under the drone.
     if (p.dashCooldown > 0) {
       ctx.strokeStyle = hexA(pc, 0.5);
@@ -426,11 +545,24 @@ export function createRenderer(canvas) {
       ctx.font = '12px "Trebuchet MS", "Segoe UI", sans-serif';
       ctx.fillText(`${state.combo} motes in a row`, 22, VIEW.height - 18);
     }
+    // Overdrive meter, bottom centre, clear of the controls hint below it.
+    const ow = 190;
+    const ox = (VIEW.width - ow) / 2;
+    const oy = VIEW.height - 42;
+    const ready = p.overdrive >= OVERDRIVE.max;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = ready ? PALETTE.overdrive : PALETTE.dim;
+    ctx.font = 'bold 12px "Trebuchet MS", "Segoe UI", sans-serif';
+    ctx.fillText(isOverdrive(p) ? `OVERDRIVE ${p.overdriveTime.toFixed(1)}s` : ready ? 'OVERDRIVE READY — PRESS Q' : 'OVERDRIVE', VIEW.width / 2, oy - 6);
+    ctx.fillStyle = 'rgba(125, 255, 212, 0.25)';
+    ctx.fillRect(ox, oy, ow, 7);
+    ctx.fillStyle = isOverdrive(p) ? '#ffffff' : PALETTE.overdrive;
+    ctx.fillRect(ox, oy, ow * (isOverdrive(p) ? p.overdriveTime / p.overdriveDuration : p.overdrive / OVERDRIVE.max), 7);
     // Controls hint, bottom right.
     ctx.textAlign = 'right';
     ctx.fillStyle = 'rgba(143, 163, 200, 0.8)';
     ctx.font = '12px "Trebuchet MS", "Segoe UI", sans-serif';
-    ctx.fillText('WASD move · SPACE fire · SHIFT dash · E nova · P pause · M mute', VIEW.width - 22, VIEW.height - 18);
+    ctx.fillText('WASD move · SPACE fire · SHIFT dash · E nova · Q overdrive · P pause', VIEW.width - 22, VIEW.height - 18);
   }
 
   function drawBanner(state) {
@@ -471,7 +603,7 @@ export function createRenderer(canvas) {
     ctx.shadowBlur = 0;
     ctx.fillStyle = PALETTE.gold;
     ctx.font = 'bold 19px "Trebuchet MS", "Segoe UI", sans-serif';
-    ctx.fillText('Three realms. One harvest. Gather the light. Outrun the dark.', VIEW.width / 2, 182);
+    ctx.fillText('Four realms. One harvest. Gather the light. Outrun the dark.', VIEW.width / 2, 182);
 
     panel(VIEW.width / 2 - 300, 214, 600, 168);
     ctx.fillStyle = PALETTE.text;
@@ -481,10 +613,11 @@ export function createRenderer(canvas) {
       ['SPACE (hold)', '— fire at the nearest wisp'],
       ['SHIFT', '— dash through danger (brief shield)'],
       ['E', '— nova bomb: clears the field'],
-      ['1 / 2 / 3', '— pick a realm, pick an upgrade'],
+      ['Q', '— overdrive when the meter is full'],
+      ['1 / 2 / 3 / 4', '— pick a realm, pick an upgrade'],
     ];
     lines.forEach((line, i) => {
-      const y = 244 + i * 28;
+      const y = 238 + i * 24;
       ctx.textAlign = 'right';
       ctx.fillStyle = PALETTE.player;
       ctx.font = 'bold 15px "Trebuchet MS", "Segoe UI", sans-serif';
@@ -504,7 +637,7 @@ export function createRenderer(canvas) {
       ctx.fillStyle = PALETTE.gold;
       ctx.font = 'bold 16px "Trebuchet MS", "Segoe UI", sans-serif';
       if (cleared >= REALMS_TOTAL) {
-        ctx.fillText(`★ ALL THREE REALMS CLEARED · BEST HARVEST ${overallBest(save)} ★`, VIEW.width / 2, 442);
+        ctx.fillText(`★ ALL FOUR REALMS CLEARED · BEST HARVEST ${overallBest(save)} · BEST COMBO ${overallBestCombo(save)} ★`, VIEW.width / 2, 442);
       } else if (best > 0) {
         ctx.fillText(`REALMS CLEARED ${cleared} / ${REALMS_TOTAL} · BEST HARVEST ${best}`, VIEW.width / 2, 442);
       } else {
@@ -523,10 +656,10 @@ export function createRenderer(canvas) {
     ctx.globalAlpha = 1;
   }
 
-  /** The realm map: three cards, locked ones shut, cleared ones crowned, the
+  /** The realm map: four cards, locked ones shut, cleared ones crowned, the
    * selected one lit. This is where the campaign's variety shows at a glance. */
   function drawSelect(state, ui) {
-    const save = (ui && ui.save) || { best: {}, cleared: [] };
+    const save = (ui && ui.save) || { best: {}, bestCombo: {}, cleared: [] };
     const selected = (ui && ui.selected) || 0;
     ctx.textAlign = 'center';
     ctx.fillStyle = PALETTE.text;
@@ -539,9 +672,9 @@ export function createRenderer(canvas) {
     ctx.font = '15px "Trebuchet MS", "Segoe UI", sans-serif';
     ctx.fillText('Clear a realm to open the next. Each realm is ten waves, its own foes and a boss.', VIEW.width / 2, 124);
 
-    const w = 272;
-    const gap = 24;
-    const total = w * 3 + gap * 2;
+    const w = 212;
+    const gap = 16;
+    const total = w * REALMS.length + gap * (REALMS.length - 1);
     REALMS.forEach((realm, i) => {
       const x = (VIEW.width - total) / 2 + i * (w + gap);
       const y = 156;
@@ -565,30 +698,31 @@ export function createRenderer(canvas) {
       ctx.beginPath();
       ctx.roundRect(x + 2, y + 2, w - 4, 90, 12);
       ctx.fill();
-      // The realm's mark: a glowing mote, a shard, or a bloom.
+      // The realm's mark: a glowing mote, a shard, a bloom, or a bolt.
       ctx.fillStyle = realm.palette.accent;
       ctx.shadowColor = realm.palette.accent;
       ctx.shadowBlur = 16;
       if (realm.id === 'ember') starShape(ctx, x + w / 2, y + 48, 22, 4, state.time * 0.5);
       else if (realm.id === 'frost') starShape(ctx, x + w / 2, y + 48, 22, 6, state.time * 0.2);
-      else starShape(ctx, x + w / 2, y + 48, 20, 8, state.time * 0.4);
+      else if (realm.id === 'void') starShape(ctx, x + w / 2, y + 48, 20, 8, state.time * 0.4);
+      else starShape(ctx, x + w / 2, y + 48, 20, 5, state.time * 0.9);
       ctx.shadowBlur = 0;
       // Number, name, tagline.
       ctx.fillStyle = PALETTE.dim;
       ctx.font = 'bold 13px "Trebuchet MS", "Segoe UI", sans-serif';
       ctx.fillText(`REALM ${i + 1} · [ ${i + 1} ]`, x + w / 2, y + 122);
       ctx.fillStyle = PALETTE.text;
-      ctx.font = 'bold 24px "Trebuchet MS", "Segoe UI", sans-serif';
+      ctx.font = 'bold 22px "Trebuchet MS", "Segoe UI", sans-serif';
       ctx.fillText(realm.name.toUpperCase(), x + w / 2, y + 154);
       ctx.fillStyle = PALETTE.dim;
-      ctx.font = '14px "Trebuchet MS", "Segoe UI", sans-serif';
+      ctx.font = '13px "Trebuchet MS", "Segoe UI", sans-serif';
       ctx.fillText(realm.tagline, x + w / 2, y + 180);
       // Boss line.
       ctx.fillStyle = realm.palette.accent;
-      ctx.font = 'bold 14px "Trebuchet MS", "Segoe UI", sans-serif';
+      ctx.font = 'bold 13px "Trebuchet MS", "Segoe UI", sans-serif';
       ctx.fillText(`BOSS: ${realm.boss.name.toUpperCase()}`, x + w / 2, y + 208);
       // Status line: crowned, open, or locked.
-      ctx.font = 'bold 16px "Trebuchet MS", "Segoe UI", sans-serif';
+      ctx.font = 'bold 15px "Trebuchet MS", "Segoe UI", sans-serif';
       if (cleared) {
         ctx.fillStyle = PALETTE.gold;
         ctx.fillText(`★ CLEARED · BEST ${realmBest(save, realm.id)}`, x + w / 2, y + 246);
@@ -598,14 +732,14 @@ export function createRenderer(canvas) {
         ctx.fillText(best > 0 ? `OPEN · BEST ${best}` : 'OPEN · NOT YET CLEARED', x + w / 2, y + 246);
       } else {
         ctx.fillStyle = PALETTE.dim;
-        ctx.font = 'bold 16px "Trebuchet MS", "Segoe UI", sans-serif';
+        ctx.font = 'bold 15px "Trebuchet MS", "Segoe UI", sans-serif';
         ctx.fillText('LOCKED', x + w / 2, y + 242);
-        ctx.font = '13px "Trebuchet MS", "Segoe UI", sans-serif';
+        ctx.font = '12px "Trebuchet MS", "Segoe UI", sans-serif';
         ctx.fillText('CLEAR THE REALM BEFORE IT', x + w / 2, y + 264);
       }
       if (isSel) {
         ctx.fillStyle = realm.palette.accent;
-        ctx.font = 'bold 16px "Trebuchet MS", "Segoe UI", sans-serif';
+        ctx.font = 'bold 15px "Trebuchet MS", "Segoe UI", sans-serif';
         ctx.fillText('▶ SELECTED ◀', x + w / 2, y + 282);
       }
     });
@@ -613,11 +747,11 @@ export function createRenderer(canvas) {
     ctx.textAlign = 'center';
     ctx.fillStyle = PALETTE.dim;
     ctx.font = '14px "Trebuchet MS", "Segoe UI", sans-serif';
-    ctx.fillText(`REALMS CLEARED ${save.cleared.length} / ${REALMS_TOTAL} · BEST HARVEST ${overallBest(save)}`, VIEW.width / 2, 500);
+    ctx.fillText(`REALMS CLEARED ${save.cleared.length} / ${REALMS_TOTAL} · BEST HARVEST ${overallBest(save)} · BEST COMBO ${overallBestCombo(save)}`, VIEW.width / 2, 500);
     ctx.globalAlpha = 0.7 + 0.3 * Math.sin(state.time * 3);
     ctx.fillStyle = PALETTE.text;
     ctx.font = 'bold 19px "Trebuchet MS", "Segoe UI", sans-serif';
-    ctx.fillText('1 / 2 / 3 pick a realm · ← → move · ENTER start', VIEW.width / 2, 534);
+    ctx.fillText('1 / 2 / 3 / 4 pick a realm · ← → move · ENTER start', VIEW.width / 2, 534);
     ctx.globalAlpha = 1;
   }
 
@@ -701,16 +835,17 @@ export function createRenderer(canvas) {
       ctx.font = '17px "Trebuchet MS", "Segoe UI", sans-serif';
       ctx.fillText(`The ${state.realm.name} swallowed the last of the light.`, VIEW.width / 2, 192);
     }
-    panel(VIEW.width / 2 - 220, 228, 440, 196);
+    panel(VIEW.width / 2 - 220, 228, 440, 224);
     const rows = [
       ['SCORE', `${state.score}`],
       ['BEST IN REALM', `${Math.max(best, state.score)}`],
+      ['BEST COMBO', `${state.maxCombo} motes`],
       ['WAVE REACHED', `${state.wave} / ${WAVES_TOTAL}`],
       ['WISPS SLAIN', `${state.kills}`],
       ['MOTES GATHERED', `${state.motesCollected}`],
     ];
     rows.forEach((row, i) => {
-      const y = 260 + i * 28;
+      const y = 258 + i * 28;
       ctx.textAlign = 'right';
       ctx.fillStyle = PALETTE.dim;
       ctx.font = '15px "Trebuchet MS", "Segoe UI", sans-serif';
@@ -727,24 +862,24 @@ export function createRenderer(canvas) {
       ctx.font = 'bold 15px "Trebuchet MS", "Segoe UI", sans-serif';
       ctx.fillText(
         cleared >= REALMS_TOTAL
-          ? `★ ALL THREE REALMS CLEARED · LIFETIME HARVEST ${save.kills} WISPS · ${save.motes} MOTES ★`
+          ? `★ ALL FOUR REALMS CLEARED · LIFETIME HARVEST ${save.kills} WISPS · ${save.motes} MOTES ★`
           : `REALMS CLEARED ${cleared} / ${REALMS_TOTAL} · RUNS ${save.runs} · WINS ${save.wins}`,
         VIEW.width / 2,
-        404,
+        428,
       );
     }
     if (state.score > best && best > 0) {
       ctx.textAlign = 'center';
       ctx.fillStyle = PALETTE.gold;
       ctx.font = 'bold 17px "Trebuchet MS", "Segoe UI", sans-serif';
-      ctx.fillText('★ NEW BEST IN THIS REALM ★', VIEW.width / 2, 448);
+      ctx.fillText('★ NEW BEST IN THIS REALM ★', VIEW.width / 2, 472);
     }
     // The restart prompt pulses but never vanishes: a screenshot must show it.
     ctx.globalAlpha = 0.7 + 0.3 * Math.sin(state.time * 3);
     ctx.textAlign = 'center';
     ctx.fillStyle = PALETTE.text;
     ctx.font = 'bold 22px "Trebuchet MS", "Segoe UI", sans-serif';
-    ctx.fillText('— PRESS ENTER — BACK TO THE REALMS —', VIEW.width / 2, 498);
+    ctx.fillText('— PRESS ENTER — BACK TO THE REALMS —', VIEW.width / 2, 516);
     ctx.globalAlpha = 1;
   }
 
@@ -782,6 +917,11 @@ export function createRenderer(canvas) {
     // Damage flash over everything.
     if (state.flash > 0) {
       ctx.fillStyle = `rgba(255, 70, 90, ${state.flash * 0.45})`;
+      ctx.fillRect(0, 0, VIEW.width, VIEW.height);
+    }
+    // Overdrive tint: the whole field glows green while the surge runs.
+    if (state.player && isOverdrive(state.player)) {
+      ctx.fillStyle = 'rgba(125, 255, 212, 0.05)';
       ctx.fillRect(0, 0, VIEW.width, VIEW.height);
     }
   }

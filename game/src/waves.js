@@ -1,9 +1,10 @@
 // Waves and upgrades. A wave is a spawn queue: types unlock as the waves climb,
-// counts grow, and the gaps shrink. Clearing a wave opens the upgrade screen, where
-// the player picks one of three upgrades — the choices that shape a run.
+// counts grow, and the gaps shrink. Clearing a wave opens the upgrade screen,
+// where the player picks one of three upgrades — the choices that shape a run.
 // Each realm runs its own table: Ember is aggressive (dashers and spitters early),
-// Frost swarms slow weavers and splitters, Void is the balanced original.
-// Wave 10 of every realm is the boss: the realm's boss plus a small escort.
+// Frost swarms slow weavers and splitters, Void is the balanced original, and the
+// Storm Reef leads with snipers and orbiters. Wave 10 of every realm is the boss:
+// the realm's boss plus a small escort.
 import { WISP } from './config.js';
 
 const WAVE_TABLES = {
@@ -40,11 +41,22 @@ const WAVE_TABLES = {
     { chaser: 14, weaver: 8, splitter: 5, spitter: 4, dasher: 3 },
     { chaser: 15, weaver: 9, splitter: 5, spitter: 5, dasher: 4 },
   ],
+  storm: [
+    { chaser: 5, sniper: 1 },
+    { chaser: 7, weaver: 2, sniper: 1 },
+    { chaser: 8, weaver: 3, splitter: 2, sniper: 2 },
+    { chaser: 9, weaver: 4, splitter: 2, sniper: 2, orbiter: 1 },
+    { chaser: 10, weaver: 5, splitter: 3, spitter: 2, sniper: 2, orbiter: 2 },
+    { chaser: 11, weaver: 6, splitter: 3, spitter: 3, sniper: 2, orbiter: 2, dasher: 1 },
+    { chaser: 12, weaver: 6, splitter: 4, spitter: 3, sniper: 3, orbiter: 2, dasher: 2 },
+    { chaser: 13, weaver: 7, splitter: 4, spitter: 4, sniper: 3, orbiter: 3, dasher: 2 },
+    { chaser: 14, weaver: 8, splitter: 5, spitter: 4, sniper: 3, orbiter: 3, dasher: 3 },
+  ],
 };
 
 /** The spawn queue for a wave in a realm: shuffled types, one entry per wisp. */
 export function waveQueue(wave, rng, realmId) {
-  if (wave >= 10) return ['boss', 'mini', 'mini', 'chaser', 'chaser'];
+  if (wave >= 10) return ['boss', 'orbiter', 'mini', 'mini', 'chaser', 'chaser'];
   const table = (WAVE_TABLES[realmId] ?? WAVE_TABLES.void)[Math.min(wave, 9) - 1];
   const queue = [];
   for (const [type, count] of Object.entries(table)) {
@@ -53,11 +65,7 @@ export function waveQueue(wave, rng, realmId) {
     }
   }
   // Shuffle so the wave never arrives in one predictable clump.
-  for (let i = queue.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(rng.next() * (i + 1));
-    [queue[i], queue[j]] = [queue[j], queue[i]];
-  }
-  return queue;
+  return rng.shuffle(queue);
 }
 
 /** Gap between spawns shrinks as the waves climb: 1.15s early, 0.45s by wave 10. */
@@ -139,6 +147,44 @@ export const UPGRADE_POOL = [
     desc: 'Motes are worth +5.',
     apply(p) {
       p.moteBonus = (p.moteBonus ?? 0) + 5;
+    },
+  },
+  {
+    id: 'pierce',
+    name: 'Piercing Rounds',
+    icon: '➶',
+    desc: 'Bullets pierce +1 wisp.',
+    apply(p) {
+      p.pierce = (p.pierce ?? 0) + 1;
+    },
+  },
+  {
+    id: 'chain',
+    name: 'Chain Coil',
+    icon: 'ϟ',
+    desc: 'Every 6th kill zaps a wisp.',
+    apply(p) {
+      p.chain = true;
+    },
+  },
+  {
+    id: 'overdrive',
+    name: 'Overdrive Cell',
+    icon: '✪',
+    desc: 'Overdrive lasts +2s, fills faster.',
+    apply(p) {
+      p.overdriveDuration = (p.overdriveDuration ?? 5) + 2;
+      p.overdriveFill = (p.overdriveFill ?? 1) * 1.3;
+    },
+  },
+  {
+    id: 'aegis',
+    name: 'Aegis Plating',
+    icon: '⛨',
+    desc: 'A shield blocks one hit per wave.',
+    apply(p) {
+      p.aegis = true;
+      p.shield = 1;
     },
   },
 ];

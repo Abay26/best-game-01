@@ -1,10 +1,12 @@
-// Lumen Harvest — the save: best scores per realm, which realms are cleared, and
-// the lifetime tally. One JSON blob in localStorage; a run that ends, won or lost,
-// records itself, so the map, the bests and the campaign tally survive a reload.
+// Lumen Harvest — the save: best scores and best combos per realm, which realms
+// are cleared, and the lifetime tally. One JSON blob in localStorage; a run that
+// ends, won or lost, records itself, so the map, the bests and the campaign tally
+// survive a reload. Old saves without a bestCombo table load fine: missing
+// entries read as zero.
 export const SAVE_KEY = 'lumen-harvest-save-v2';
 
 export function blankSave() {
-  return { best: {}, cleared: [], kills: 0, motes: 0, runs: 0, wins: 0 };
+  return { best: {}, bestCombo: {}, cleared: [], kills: 0, motes: 0, runs: 0, wins: 0 };
 }
 
 export function loadSave() {
@@ -14,9 +16,11 @@ export function loadSave() {
     const parsed = JSON.parse(raw);
     const save = blankSave();
     if (parsed && typeof parsed === 'object') {
-      if (parsed.best && typeof parsed.best === 'object') {
-        for (const [k, v] of Object.entries(parsed.best)) {
-          if (typeof v === 'number' && Number.isFinite(v)) save.best[k] = Math.max(0, Math.floor(v));
+      for (const table of ['best', 'bestCombo']) {
+        if (parsed[table] && typeof parsed[table] === 'object') {
+          for (const [k, v] of Object.entries(parsed[table])) {
+            if (typeof v === 'number' && Number.isFinite(v)) save[table][k] = Math.max(0, Math.floor(v));
+          }
         }
       }
       if (Array.isArray(parsed.cleared)) save.cleared = parsed.cleared.filter((c) => typeof c === 'string');
@@ -43,10 +47,22 @@ export function realmBest(save, realmId) {
   return save.best[realmId] ?? 0;
 }
 
+/** Best combo ever in one realm, or 0. */
+export function realmBestCombo(save, realmId) {
+  return save.bestCombo[realmId] ?? 0;
+}
+
 /** Best score across all realms, or 0. */
 export function overallBest(save) {
   let best = 0;
   for (const v of Object.values(save.best)) best = Math.max(best, v);
+  return best;
+}
+
+/** Best combo across all realms, or 0. */
+export function overallBestCombo(save) {
+  let best = 0;
+  for (const v of Object.values(save.bestCombo)) best = Math.max(best, v);
   return best;
 }
 
@@ -61,6 +77,7 @@ export function recordRun(save, realmId, result) {
   save.kills += result.kills;
   save.motes += result.motes;
   if (result.score > realmBest(save, realmId)) save.best[realmId] = result.score;
+  if (result.maxCombo > realmBestCombo(save, realmId)) save.bestCombo[realmId] = result.maxCombo;
   if (result.won) {
     save.wins += 1;
     if (!save.cleared.includes(realmId)) save.cleared.push(realmId);

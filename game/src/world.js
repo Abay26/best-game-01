@@ -1,10 +1,13 @@
 // Lumen Harvest — the world: one step of the rules. It owns the state (player,
-// wisps, bullets, motes, particles), the wave flow, the combo, collisions and the
-// win/lose conditions. The renderer only paints this state; the loop only steps it.
-import { COMBO, HAZARD, MOTE, PALETTE, VIEW, WAVES_TOTAL } from './config.js';
+// wisps, bullets, motes, particles, bolts), the wave flow, the combo, the kill
+// streaks, the overdrive meter, collisions and the win/lose conditions. The
+// renderer only paints this state; the loop only steps it.
+import { CHAIN, COMBO, HAZARD, MOTE, OVERDRIVE, PALETTE, STREAK, VIEW, WAVES_TOTAL } from './config.js';
 import { realmById } from './arenas.js';
 import { createPlayer, updatePlayer } from './player.js';
 import {
+  nearestWispInRange,
+  spawnBolt,
   spawnBullet,
   spawnFloater,
   spawnHazard,
@@ -30,6 +33,9 @@ export const EVENT_DASH = 64;
 export const EVENT_NOVA = 128;
 export const EVENT_PICKUP = 256;
 export const EVENT_KILL = 512;
+export const EVENT_OVERDRIVE = 1024;
+export const EVENT_CHAIN = 2048;
+export const EVENT_STREAK = 4096;
 
 export function comboMultiplier(state) {
   return 1 + Math.min(Math.floor(state.combo / COMBO.perLevel), COMBO.maxLevel - 1);
@@ -52,6 +58,10 @@ export function createWorld(rng) {
     score: 0,
     combo: 0,
     comboTimer: 0,
+    maxCombo: 0,
+    streak: 0, // kills since the last hit
+    streakTier: 0, // streak tiers already called out this run
+    killsSinceChain: 0,
     wave: 1,
     waveState: 'fight', // fight | upgrade | done
     queue: [],
@@ -61,6 +71,7 @@ export function createWorld(rng) {
     time: 0,
     shake: 0,
     flash: 0,
+    hitstop: 0, // brief freeze after a boss falls
     banner: null,
     upgrades: [],
     lastUpgradeIds: [],
@@ -82,6 +93,8 @@ export function createWorld(rng) {
   function startWave() {
     world.queue = waveQueue(world.wave, rng, world.realm.id);
     world.spawnTimer = 0.9;
+    // The aegis shield, if the drone carries it, recharges at every wave.
+    if (world.player.aegis) world.player.shield = 1;
     const bossWave = world.wave === WAVES_TOTAL;
     world.banner = {
       text: bossWave ? world.realm.boss.name.toUpperCase() : `WAVE ${world.wave}`,
@@ -117,11 +130,16 @@ export function createWorld(rng) {
     world.score = 0;
     world.combo = 0;
     world.comboTimer = 0;
+    world.maxCombo = 0;
+    world.streak = 0;
+    world.streakTier = 0;
+    world.killsSinceChain = 0;
     world.wave = 1;
     world.waveState = 'fight';
     world.time = 0;
     world.shake = 0;
     world.flash = 0;
+    world.hitstop = 0;
     world.upgrades = [];
     world.lastUpgradeIds = [];
     world.kills = 0;
@@ -171,11 +189,48 @@ export function createWorld(rng) {
     return { x, y };
   }
 
+  function fillOverdrive(amount) {
+    const p = world.player;
+    if (p.overdriveTime > 0) return;
+    p.overdrive = Math.min(OVERDRIVE.max, p.overdrive + amount * p.overdriveFill);
+  }
+
+  function fireChain() {
+    // Chain lightning: the nearest wisp within range takes a hit, drawn as a
+    // bolt from the drone. Returns true when it zapped something.
+    const p = world.player;
+    const target = nearestWispInRange(world.wisps, p.x, p.y, CHAIN.range);
+    if (!target) return false;
+    spawnBolt(world.particles, p.x, p.y, target.x, target.y, '#7dffd4');
+    spawnParticle(world.particles, target.x, target.y, '#7dffd4', 10, 200, 0.4, 3);
+    target.hp -= CHAIN.damage;
+    target.flash = 0.09;
+    if (target.hp <= 0) {
+      const idx = world.wisps.indexOf(target);
+      if (idx >= 0) killWisp(idx, true);
+    }
+    return true;
+  }
+
+  function callStreak() {
+    // A streak tier, called out once per run: a banner, a bonus, a sound.
+    const tier = STREAK.tiers[world.streakTier];
+    if (!tier || world.streak < tier.kills) return 0;
+    world.streakTier += 1;
+    world.score += tier.bonus;
+    world.banner = { text: tier.name, sub: `+${tier.bonus} — ${world.streak} KILLS WITHOUT A HIT`, timer: 2.0 };
+    spawnFloater(world.floaters, world.player.x, world.player.y - 34, `+${tier.bonus}`, PALETTE.gold);
+    return EVENT_STREAK;
+  }
+
   function killWisp(index, awardScore) {
     const w = world.wisps[index];
     world.wisps.splice(index, 1);
     world.kills += 1;
+    world.streak += 1;
+    world.killsSinceChain += 1;
     spawnParticle(world.particles, w.x, w.y, w.color, w.type === 'splitter' ? 22 : 14, 190, 0.6, 3.2);
+    fillOverdrive(OVERDRIVE.perKill);
     if (awardScore) {
       const gained = w.score * comboMultiplier(world);
       world.score += gained;
@@ -187,10 +242,12 @@ export function createWorld(rng) {
       if (w.type === 'boss') {
         spawnParticle(world.particles, w.x, w.y, '#ffffff', 40, 320, 1.0, 4);
         spawnFloater(world.floaters, w.x, w.y - 34, `${w.name} SLAIN`, PALETTE.gold);
+        world.hitstop = 0.22; // the world holds its breath as the boss falls
+        world.shake = 24;
       }
       if (w.type === 'splitter') {
         for (let i = 0; i < 2; i += 1) {
-          const mini = spawnWisp(rng, 'mini', w.x + rng.range(-16, 16), w.y + rng.range(-16, 16), world.wave);
+          const mini = spawnWisp(rng, 'mini', w.x + rng.range(-16, 16), w.y + rng.range(-16, 16), world.wave, world.realm);
           world.wisps.push(mini);
         }
       }
@@ -200,10 +257,20 @@ export function createWorld(rng) {
   function hurtPlayer(fromX, fromY) {
     const p = world.player;
     if (!p.alive || p.invuln > 0 || p.dashTimer > 0) return false;
+    // The aegis shield, when up, eats the hit instead of a heart.
+    if (p.shield > 0) {
+      p.shield = 0;
+      p.invuln = 1.1;
+      spawnParticle(world.particles, p.x, p.y, '#7dffd4', 16, 200, 0.5, 3.2);
+      spawnFloater(world.floaters, p.x, p.y - 30, 'SHIELD DOWN', '#7dffd4');
+      return true;
+    }
     p.hearts -= 1;
     p.invuln = 1.1;
     world.combo = 0;
     world.comboTimer = 0;
+    world.streak = 0;
+    world.streakTier = 0;
     world.shake = 15;
     world.flash = 0.4;
     // Knock the drone away from whatever hit it.
@@ -236,8 +303,21 @@ export function createWorld(rng) {
       spawnParticle(world.particles, w.x, w.y, w.color, 10, 200, 0.6, 3);
       world.wisps.splice(i, 1);
       world.kills += 1;
+      world.streak += 1;
     }
     world.orbs = [];
+    return true;
+  }
+
+  function startOverdrive() {
+    const p = world.player;
+    if (p.overdrive < OVERDRIVE.max || p.overdriveTime > 0) return false;
+    p.overdrive = 0;
+    p.overdriveTime = p.overdriveDuration;
+    world.flash = 0.3;
+    world.shake = 12;
+    spawnParticle(world.particles, p.x, p.y, PALETTE.overdrive, 30, 300, 0.7, 3.6);
+    world.banner = { text: 'OVERDRIVE', sub: 'SURGE FIRE · SURGE SPEED · PIERCING SHOTS', timer: 1.6 };
     return true;
   }
 
@@ -306,13 +386,15 @@ export function createWorld(rng) {
 
     const p = world.player;
 
+    // Overdrive: Q at a full meter starts the surge.
+    if (input.overdrive && startOverdrive()) events |= EVENT_OVERDRIVE;
     // Nova bomb.
     if (input.nova && fireNova()) events |= EVENT_NOVA;
 
     const bulletsBefore = world.bullets.length;
     const dashBefore = p.dashTimer;
-    updatePlayer(p, input, world, dt, (x, y, dx, dy) => {
-      world.bullets.push(spawnBullet(x, y, dx, dy, p.bulletSpeed, p.bulletDamage));
+    updatePlayer(p, input, world, dt, (x, y, dx, dy, pierce) => {
+      world.bullets.push(spawnBullet(x, y, dx, dy, p.bulletSpeed, p.bulletDamage, pierce));
     });
     if (world.bullets.length > bulletsBefore) events |= EVENT_SHOT;
     if (p.dashTimer > 0 && dashBefore <= 0) events |= EVENT_DASH;
@@ -358,23 +440,23 @@ export function createWorld(rng) {
     // Wisps (and the boss, which fights by its own rules).
     for (const w of world.wisps) {
       if (w.type === 'boss') {
-        updateBoss(w, p, dt, world.time, (x, y, dx, dy) => {
-          world.orbs.push(spawnOrb(x, y, dx, dy));
+        updateBoss(w, p, dt, world.time, (x, y, dx, dy, speed) => {
+          world.orbs.push(spawnOrb(x, y, dx, dy, speed));
         }, (x, y) => {
           const mini = spawnWisp(rng, 'mini', x + rng.range(-24, 24), y + rng.range(-24, 24), world.wave, world.realm);
           world.wisps.push(mini);
         });
       } else {
-        updateWisp(w, p, dt, world.time, (x, y, dx, dy) => {
-          world.orbs.push(spawnOrb(x, y, dx, dy));
+        updateWisp(w, p, dt, world.time, (x, y, dx, dy, speed) => {
+          world.orbs.push(spawnOrb(x, y, dx, dy, speed));
         });
       }
     }
 
-    // Hazards: tick, erupt, and cut.
+    // Hazards: tick, erupt, strike, and cut.
     for (let i = world.hazards.length - 1; i >= 0; i -= 1) {
       const h = world.hazards[i];
-      updateHazard(h, dt);
+      updateHazard(h, dt, p);
       if (h.life <= 0 || (h.hazard === 'vent' && h.state === 'erupt' && h.stateTimer <= 0)) {
         if (h.hazard === 'vent' && h.state === 'erupt') {
           spawnParticle(world.particles, h.x, h.y, world.realm.hazardColor, 26, 260, 0.6, 3.6);
@@ -388,7 +470,18 @@ export function createWorld(rng) {
         if ((h.x - p.x) * (h.x - p.x) + (h.y - p.y) * (h.y - p.y) < rr * rr) {
           if (hurtPlayer(h.x, h.y)) events |= EVENT_HIT;
         }
-      } else if (h.hazard !== 'vent') {
+      } else if (h.hazard === 'storm' && h.state === 'strike') {
+        // Lightning lands where the drone stood when the strike was telegraphed.
+        if (!h.struck) {
+          h.struck = true;
+          spawnBolt(world.particles, h.x, h.y, h.strikeX, h.strikeY, world.realm.hazardColor);
+          spawnParticle(world.particles, h.strikeX, h.strikeY, world.realm.hazardColor, 18, 240, 0.4, 3.2);
+        }
+        const rr = HAZARD.stormStrikeRadius + p.radius;
+        if ((h.strikeX - p.x) * (h.strikeX - p.x) + (h.strikeY - p.y) * (h.strikeY - p.y) < rr * rr) {
+          if (hurtPlayer(h.strikeX, h.strikeY)) events |= EVENT_HIT;
+        }
+      } else if (h.hazard !== 'vent' && h.hazard !== 'storm') {
         const rr = h.radius + p.radius - 2;
         if ((h.x - p.x) * (h.x - p.x) + (h.y - p.y) * (h.y - p.y) < rr * rr) {
           if (hurtPlayer(h.x, h.y)) events |= EVENT_HIT;
@@ -396,7 +489,7 @@ export function createWorld(rng) {
       }
     }
 
-    // Bullets.
+    // Bullets: fly, hit wisps, and keep going while they still pierce.
     for (let i = world.bullets.length - 1; i >= 0; i -= 1) {
       const b = world.bullets[i];
       b.x += b.vx * dt;
@@ -406,22 +499,33 @@ export function createWorld(rng) {
         world.bullets.splice(i, 1);
         continue;
       }
+      let spent = false;
       for (let j = world.wisps.length - 1; j >= 0; j -= 1) {
         const w = world.wisps[j];
+        if (b.hit.has(w)) continue;
         const rr = w.radius + b.radius;
         if ((w.x - b.x) * (w.x - b.x) + (w.y - b.y) * (w.y - b.y) < rr * rr) {
+          b.hit.add(w);
           w.hp -= b.damage;
           w.flash = 0.09;
           spawnParticle(world.particles, b.x, b.y, w.color, 3, 90, 0.25, 2);
-          world.bullets.splice(i, 1);
           if (w.hp <= 0) {
             killWisp(j, true);
             events |= EVENT_KILL;
           }
+          if (b.pierce > 0) {
+            b.pierce -= 1; // through it goes, into the next wisp
+          } else {
+            spent = true;
+          }
           break;
         }
       }
-      // Shards and brambles can be shot apart; vents cannot.
+      if (spent) {
+        world.bullets.splice(i, 1);
+        continue;
+      }
+      // Shards, brambles and storm cells can be shot apart; vents cannot.
       if (world.bullets[i] === b) {
         for (let j = world.hazards.length - 1; j >= 0; j -= 1) {
           const h = world.hazards[j];
@@ -486,8 +590,10 @@ export function createWorld(rng) {
       if (p.alive && (m.x - p.x) * (m.x - p.x) + (m.y - p.y) * (m.y - p.y) < rr * rr) {
         world.motes.splice(i, 1);
         world.combo += 1;
+        world.maxCombo = Math.max(world.maxCombo, world.combo);
         world.comboTimer = COMBO.window;
         world.motesCollected += 1;
+        fillOverdrive(OVERDRIVE.perMote);
         const gained = (m.value + p.moteBonus) * comboMultiplier(world);
         world.score += gained;
         spawnFloater(world.floaters, m.x, m.y, `+${gained}`, PALETTE.mote);
@@ -495,6 +601,14 @@ export function createWorld(rng) {
         events |= EVENT_PICKUP;
       }
     }
+
+    // Chain lightning, every Nth kill, when the drone carries the coil.
+    if (p.chain && world.killsSinceChain >= CHAIN.everyKills) {
+      world.killsSinceChain = 0;
+      if (fireChain()) events |= EVENT_CHAIN;
+    }
+    // Streak callouts.
+    events |= callStreak();
 
     updateFx(dt);
 
@@ -524,6 +638,12 @@ export function createWorld(rng) {
   function updateFx(dt) {
     for (let i = world.particles.length - 1; i >= 0; i -= 1) {
       const pt = world.particles[i];
+      if (pt.kind === 'bolt') {
+        // Lightning bolts hang for a blink, then vanish.
+        pt.life -= dt;
+        if (pt.life <= 0) world.particles.splice(i, 1);
+        continue;
+      }
       pt.x += pt.vx * dt;
       pt.y += pt.vy * dt;
       pt.vx *= 1 - 2.4 * dt;
@@ -531,7 +651,7 @@ export function createWorld(rng) {
       pt.life -= dt;
       if (pt.life <= 0) world.particles.splice(i, 1);
     }
-    // Ambient life of the realm: embers rise, snow falls, spores drift.
+    // Ambient life of the realm: embers rise, snow falls, spores drift, rain slants.
     for (const a of world.ambient) {
       a.x += a.vx * dt;
       a.y += a.vy * dt;
